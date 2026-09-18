@@ -1,5 +1,10 @@
 # Work log
 
+## 2026-09-18 — deploy mobile refinement 7f88763
+Owner explicitly requested deployment. Re-ran build/typecheck, presentation, calendar-items and diff check: passed. Committed and pushed 7f88763; transferred git archive as a binary tar file via scp (no PowerShell binary pipe). Tagged old image workboard-app:rollback-6f876b9, built app on VPS and used docker compose up -d --no-deps app. No migration or other stack changes. DB container ID unchanged and healthy. Production marker 7f88763; HTTPS root 200, session ok/user=null. Startup log has standard Apache ServerName warning, no failure in smoke requests.
+Production assets tested in Chromium at 320/375/414/768/1440 with API fixtures (no authenticated production write): navigation, layout toggle, search, empty reset, drawer, no root overflow and nav clearance passed. No real-device test or extended monitoring claim. Full redesign mentioned before the deploy instruction has not been implemented.
+Rollback if required: tag workboard-app:rollback-6f876b9 as workboard-app:latest and recreate only app with --no-deps; restore source archive/marker to 6f876b9. No DB rollback needed for this UI-only release.
+
 ## 2026-09-18 — mobile workspace design refinement
 
 Owner asked Codex to implement the mobile UX/UI. Current code already included MobileBoard and bottom tabs, so preserved those components and existing API/state/approval behavior. Added a dedicated mobile stylesheet using the existing paper/terracotta/Kanit design. Reworked the mobile list into grouped rows with task IDs, public summary, checklist counts and owner; added list/board toggle with horizontal snap columns, persistent search/status controls, all status filters including zero counts, and old-release visibility. Replaced nested interactive task rows with a native open button beside the approval action; approval now respects moving state.

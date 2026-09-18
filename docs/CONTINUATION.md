@@ -1,5 +1,8 @@
 # ทำงานต่อจากตรงนี้
 
+## Deploy ล่าสุด — 18 ก.ย. 2026
+Production 7f88763 (mobile workspace refinement) ตามคำสั่งเจ้าของ "deploy เลย". Build และ up --no-deps เฉพาะ app; DB container เดิม healthy. HTTPS root/session ผ่าน และ browser ตรวจ production bundle ด้วย API fixtures ที่ 320/375/414/768/1440 ผ่าน. ไม่มี migration. Rollback image: workboard-app:rollback-6f876b9. คำขอ "ขอใหม่หมด" ก่อนหน้านี้ยังไม่ได้เริ่มออกแบบใหม่ — ที่ deploy คือชุดปรับมือถือที่เสร็จแล้ว.
+
 ## ล่าสุด — ปรับดีไซน์มือถือ (local, ยังไม่ deploy)
 ปรับ src/MobileBoard.tsx, src/main.tsx และเพิ่ม src/mobile-workspace.css โดยต่อจาก mobile list ของรอบก่อน: persistent controls, list/board toggle, scroll-snap columns, bottom navigation clearance, full-width drawers, larger inputs, visible archived-release filter. Build แล้วใน public/. ไม่มี API/schema change.
 ตรวจ Chromium ด้วย API fixtures (ไม่มีข้อมูล production) ที่ 320/375/414/768/1440 ผ่าน; script และภาพอยู่ scratch/ui-qa/. รูป mobile-375.png, board-414.png, drawer-375.png สำหรับเจ้าของตรวจดีไซน์. ยังไม่ commit/deploy และยังไม่ตรวจ keyboard/safe-area บนมือถือจริง.

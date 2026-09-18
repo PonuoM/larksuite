@@ -5,7 +5,7 @@
 - [x] แก้พื้นที่ workspace ให้หักความสูงเมนูล่างจริง พร้อม safe area; drawer เต็มจอและช่องกรอก 16px
 - [x] แสดงตัวเลือกงานเปิดใช้เก่าบนมือถือและสถานะที่มี 0 งาน; ปุ่มอนุมัติแสดงสถานะกำลังทำ
 - [x] Chromium fixture QA ที่ 320/375/414/768/1440px: navigation, search, empty reset, board toggle, drawer, overflow; build/presentation/calendar-items ผ่าน
-- [ ] เจ้าของตรวจดีไซน์และอนุญาต deploy (รอบนี้ยังไม่ deploy); ยังไม่ได้ตรวจบนโทรศัพท์จริง
+- [x] เจ้าของอนุญาต deploy: production 7f88763; HTTPS/session ผ่าน และ Chromium ตรวจ bundle จริงด้วย fixtures 5 ขนาดผ่าน (ยังไม่ตรวจโทรศัพท์จริง)
 
 อัปเดต: 2026-09-18
 
