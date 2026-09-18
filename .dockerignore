@@ -1,0 +1,14 @@
+.git
+node_modules
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/app.env
+scratch
+.playwright-mcp
+.kilo
+.hallmark
+public/assets
+tests
+docs

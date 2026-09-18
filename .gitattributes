@@ -1,0 +1,5 @@
+# Files that run on the Linux VPS must keep LF endings.
+deploy/** text eol=lf
+*.sh text eol=lf
+*.sql text eol=lf
+.htaccess text eol=lf

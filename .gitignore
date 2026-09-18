@@ -12,3 +12,4 @@ coverage/
 .playwright-mcp/
 scratch/
 .DS_Store
+deploy/app.env
