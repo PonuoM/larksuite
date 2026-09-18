@@ -1,6 +1,6 @@
 # Workboard agent instructions
 
-Read README.md, CONTEXT.md, implementation_plan.md, TASKS.md and docs/CONTINUATION.md before editing.
+Read README.md, docs/HANDOFF.md, CONTEXT.md, implementation_plan.md, TASKS.md and docs/CONTINUATION.md before editing.
 
 ## Current stage
 

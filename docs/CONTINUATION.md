@@ -57,3 +57,6 @@ src/MeetingCalendar.tsx (โครงหน้าใหม่ + MeetingDrawer �
 
 ## ล่าสุด: ออนไลน์แล้ว
 https://larksuite.prima49.com ใช้งานได้ (HTTPS ผ่าน Caddy ของ workspec) อัปเดตโค้ด: commit + push แล้วส่ง git archive ไป /opt/workboard, docker compose build app && up -d ใน deploy/ (ห้ามลบ volume workboard_db_data) migration ใหม่รันด้วย root ใน workboard-db
+
+## ล่าสุด: คู่มือส่งต่องาน
+docs/HANDOFF.md คือคู่มือหลักสำหรับคนรับงานต่อ (dev, deploy, DB, VPS, การเชื่อม AI) และ scripts/issue-admin-link.mjs ใช้ออกลิงก์ผู้ดูแลเมื่อลิงก์หาย

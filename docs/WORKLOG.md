@@ -95,3 +95,7 @@ DNS first had two A records (187.77.127.28 and 202.183.192.218, the latter creat
 
 Checked: workjobs/meet/listen 200 and asr 401 before and after the reload (unchanged); /api/v1/session 200; /.env, /api/bootstrap.php, /deploy/.env, /docs/* 403; nosniff, DENY, no-referrer headers; browser load at 1440/375 with Kanit and no console or network errors. Rollback: remove the larksuite block from /opt/workspec/Caddyfile (or restore the .bak) and `caddy reload`; `docker compose down` in /opt/workboard/deploy.
 Next: user signs in with scratch/production-admin-link.txt and recreates member/viewer links on production.
+
+## 2026-09-18 — handoff manual
+
+Wrote docs/HANDOFF.md for the developer taking over (Thai): system overview, code map, local setup, tests, access links, deploy/update steps (Git Bash only: PowerShell 5.1 corrupts the tar pipe), production DB operations (migrations, backup, restore), shared-VPS rules (Caddy single-file mount, INI comments) and options for AI access (recommended: API with a dedicated editor link; MCP wrapper next; read-only SQL via SSH; no direct writes; Phase 3 proposals remain the agreed end state). README rewritten to the current state. Added scripts/issue-admin-link.mjs (tested locally: rejects unknown principal, issues a reusable link; the test link was closed).
