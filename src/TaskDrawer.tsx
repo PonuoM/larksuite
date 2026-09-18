@@ -75,7 +75,7 @@ export default function TaskDrawer({ task, projects, editable, canApprove, busy,
       {tab === 'progress' ? <ProgressTab task={draft} larkTargets={editable ? larkTargets : []} commentOnly={!editable} onError={onError} onNotice={onNotice} /> : <form className="drawer-body" onSubmit={(e) => { e.preventDefault(); onSave(isNew ? { ...EMPTY_TASK, ...draft } as Task : draft, notify, notifyText); }}>
         {canApprove && !isNew && approvable(draft.status) && <ApprovalPanel task={draft} onComment={() => setTab('progress')} onDone={(saved) => { onChanged(saved); onNotice(saved.status === 0 ? 'อนุมัติแล้ว ย้ายไป “รอดำเนินการ”' : 'บันทึกเหตุผลแล้ว งานยังรออนุมัติ'); onClose(); }} onError={onError} />}
         {editable ? <>
-          <Field label="โปรเจกต์"><select value={draft.project_id} disabled={!isNew} onChange={(e) => field('project_id', Number(e.target.value))}>{projects.filter((p) => p.id === draft.project_id || p.role !== 'viewer').map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="โปรเจกต์"><select value={draft.project_id} onChange={(e) => field('project_id', Number(e.target.value))}>{projects.filter((p) => p.id === draft.project_id || p.role !== 'viewer').map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="ชื่องาน"><input required value={draft.title} onChange={(e) => field('title', e.target.value)} placeholder="สิ่งที่จะได้เมื่อเสร็จ เช่น หน้าโทรออกแบบใหม่สำหรับทีมเทเล" /></Field>
           <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUS_ORDER.map((i) => <option key={i} value={i} disabled={i !== draft.status && task.status === AWAITING_APPROVAL && !canApprove}>{STATUSES[i]}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
           <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} /></Field></div>
@@ -195,7 +195,7 @@ function Subtasks({ task, editable, onLocal, onApplied, onError }: { task: Task;
   </section>;
 }
 
-const FIELD_NAMES: Record<string, string> = { title: 'ชื่องาน', feature: 'ฟังก์ชัน', public_summary: 'สรุป', scope: 'รายละเอียด', criteria: 'เกณฑ์ตรวจรับ', evidence: 'หลักฐาน', assignee: 'ผู้รับผิดชอบ', blocked_reason: 'สาเหตุที่ติดขัด', checklist: 'งานย่อย', planned_go_live_on: 'กำหนดเริ่มใช้', status: 'สถานะ' };
+const FIELD_NAMES: Record<string, string> = { project_id: 'ย้ายโปรเจกต์', title: 'ชื่องาน', feature: 'ฟังก์ชัน', public_summary: 'สรุป', scope: 'รายละเอียด', criteria: 'เกณฑ์ตรวจรับ', evidence: 'หลักฐาน', assignee: 'ผู้รับผิดชอบ', blocked_reason: 'สาเหตุที่ติดขัด', checklist: 'งานย่อย', planned_go_live_on: 'กำหนดเริ่มใช้', status: 'สถานะ' };
 
 function describe(event: TaskEvent): { title: string; body?: string } {
   let p: Record<string, any> = {};

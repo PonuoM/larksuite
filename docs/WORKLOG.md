@@ -190,3 +190,5 @@ Flow: code 0 relabelled รอดำเนินการ; order 6,5,0,1,2,3,4. 
 
 ## 2026-09-18 — five columns
 Owner: cards too narrow with 7 columns; merge รอตัดสินใจ into รอดำเนินการ and รอทดสอบ into รอเปิดใช้. Now 6 รออนุมัติ → 0 รอดำเนินการ → 1 กำลังทำ → 3 รอทดสอบ/เปิดใช้ → 4 เปิดใช้งานแล้ว. Migration 007 (data only) moves 5→0 and 2→3; codes 2/5 rejected on input, names kept for history. Undecided questions stay in blocked_reason (overview "ต้องการข้อสรุป"). Reject keeps the task in 6 and writes "ไม่อนุมัติ: <reason>" to blocked_reason; a later approval clears that prefix. Not added to the compose initdb mounts (data-only; a fresh DB has no rows) so deploy does not restart the DB. Tests updated (retired codes 422, reject stays in 6, approve clears reason) and pass; browser 1440: 5 columns × 232 px, no overflow.
+
+- 2026-09-18: tasks can move between projects (PATCH project_id; needs edit rights in the target, admins everywhere; recorded as a project_id change in history). Drawer project picker no longer locked after creation. Test added.

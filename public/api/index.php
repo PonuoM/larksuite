@@ -112,11 +112,18 @@ try {
     if($method==='PATCH'||$method==='DELETE') {
        editable($role);$data=body();if(!isset($data['version'])||!is_int($data['version']))reply(422,'ต้องระบุ version');
        $target=notifyTarget($data);$d=$method==='PATCH'?taskData($data):null;
+       // Moving a task to another project needs edit rights there too (admins have them everywhere).
+       if($d) {
+          $moveTo=$data['project_id']??(int)$t['project_id'];
+          if(!is_int($moveTo)||$moveTo<1)reply(422,'โปรเจกต์ไม่ถูกต้อง');
+          if($moveTo!==(int)$t['project_id'])editable(roleFor($u,$moveTo));
+          $d['project_id']=$moveTo;
+       }
        // Work in รออนุมัติ starts only through POST /tasks/{id}/approve (or when an approver moves it).
        if($d&&(int)$t['status']===STATUS_AWAITING_APPROVAL&&$d['status']!==STATUS_AWAITING_APPROVAL&&!(int)$u['can_approve'])reply(403,'งานนี้รออนุมัติ ต้องให้ผู้อนุมัติกด "อนุมัติ" ก่อนเริ่มทำ');
        db()->beginTransaction();
        if($method==='DELETE')$stmt=query('UPDATE tasks SET archived=1,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$id,$data['version']]);
-       else $stmt=query('UPDATE tasks SET title=?,feature=?,public_summary=?,scope=?,criteria=?,evidence=?,assignee=?,blocked_reason=?,checklist=?,status=?,planned_go_live_on=?,actual_released_at=?,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?($t['actual_released_at']?:gmdate('Y-m-d H:i:s')):null,$id,$data['version']]);
+       else $stmt=query('UPDATE tasks SET project_id=?,title=?,feature=?,public_summary=?,scope=?,criteria=?,evidence=?,assignee=?,blocked_reason=?,checklist=?,status=?,planned_go_live_on=?,actual_released_at=?,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$d['project_id'],$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?($t['actual_released_at']?:gmdate('Y-m-d H:i:s')):null,$id,$data['version']]);
        if($stmt->rowCount()!==1){db()->rollBack();reply(409,'มีคนแก้งานนี้แล้ว กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก');}
        if($d&&$d['status']===STATUS_AWAITING_APPROVAL&&(int)$t['status']!==STATUS_AWAITING_APPROVAL)query('UPDATE tasks SET approved_by=NULL,approved_at=NULL WHERE id=?',[$id]);
        $changes=[];if($d)foreach($d as $key=>$value)if((string)$t[$key]!== (string)$value)$changes[$key]=['from'=>$t[$key],'to'=>$value];

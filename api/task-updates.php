@@ -37,7 +37,7 @@ function larkTaskText(array $t,array $u,string $headline): string {
 // Headline for "save + notify": the author's own message when given, otherwise what changed.
 function changeHeadline(array $changes,$custom): string {
     if(is_string($custom)&&trim($custom)!=='')return mb_substr(trim($custom),0,2000,'UTF-8');
-    $names=['title'=>'ชื่องาน','feature'=>'ฟังก์ชัน','public_summary'=>'สรุป','scope'=>'รายละเอียด','criteria'=>'เกณฑ์ตรวจรับ','evidence'=>'หลักฐาน','assignee'=>'ผู้รับผิดชอบ','blocked_reason'=>'สาเหตุที่ติดขัด','checklist'=>'งานย่อย','planned_go_live_on'=>'กำหนดเริ่มใช้'];
+    $names=['project_id'=>'โปรเจกต์','title'=>'ชื่องาน','feature'=>'ฟังก์ชัน','public_summary'=>'สรุป','scope'=>'รายละเอียด','criteria'=>'เกณฑ์ตรวจรับ','evidence'=>'หลักฐาน','assignee'=>'ผู้รับผิดชอบ','blocked_reason'=>'สาเหตุที่ติดขัด','checklist'=>'งานย่อย','planned_go_live_on'=>'กำหนดเริ่มใช้'];
     $parts=[];
     if(isset($changes['status']))$parts[]='ย้ายสถานะ '.TASK_STATUSES[(int)$changes['status']['from']].' → '.TASK_STATUSES[(int)$changes['status']['to']];
     $fields=array_values(array_intersect_key($names,$changes));

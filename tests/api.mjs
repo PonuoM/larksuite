@@ -179,6 +179,24 @@ try {
   const archived = await call(editor, `/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ version: current }) });
   if (archived.status !== 200) throw new Error('archive failed');
 
+  // Moving a task between projects: needs edit rights in the target project (admins everywhere).
+  {
+    const allProjectIds = (await call(admin, '/projects')).payload.data.map((p) => Number(p.id));
+    const other = allProjectIds.find((id) => id !== projectId);
+    const mover = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: 'API move ' + marker }) });
+    const moverId = mover.payload.data.id;
+    try {
+      const denied = await call(editor, `/tasks/${moverId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API move ' + marker, project_id: other, version: mover.payload.data.version }) });
+      if (![403, 404].includes(denied.status)) throw new Error('editor moved a task into a project without access: ' + denied.status);
+      if ((await call(editor, `/tasks/${moverId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API move ' + marker, project_id: 'x', version: mover.payload.data.version }) })).status !== 422) throw new Error('invalid project id accepted');
+      const moved = await call(admin, `/tasks/${moverId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API move ' + marker, project_id: other, version: mover.payload.data.version }) });
+      if (moved.status !== 200 || moved.payload.data.project_id !== other) throw new Error('admin could not move the task: ' + JSON.stringify(moved.payload));
+      if ((await call(editor, `/tasks/${moverId}`)).status !== 404) throw new Error('moved task still visible in the old project for a project-scoped editor');
+      const ev = (await call(admin, `/tasks/${moverId}/events`)).payload.data[0];
+      if (ev.action !== 'updated' || !JSON.parse(ev.payload).project_id) throw new Error('project move not in history');
+    } finally { await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(moverId)};`); }
+  }
+
   // Five columns (owner 2026-09-18): รออนุมัติ(6) → รอดำเนินการ(0) → กำลังทำ(1) → รอทดสอบ/เปิดใช้(3) → เปิดใช้งานแล้ว(4).
   // Codes 2 and 5 are retired. Approvers (even view-only) comment and approve 6 → 0; a rejection stays in 6 with its reason.
   const approvalTask = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 6 }) });
@@ -308,7 +326,7 @@ try {
   if(eventCount!==3)throw new Error('meeting audit event count incorrect');
   if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
   if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'five columns + approval 6→0 + CEO comments'] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'five columns + approval 6→0 + CEO comments', 'move task between projects'] }, null, 2));
 } finally {
   if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
   const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');
