@@ -365,7 +365,7 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
 .drawer-actions button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 
 /* รอตัดสินใจ / รออนุมัติ columns (migration 006) */
-.board { grid-template-columns: repeat(7, minmax(160px, 1fr)); gap: 10px; }
+.board { grid-template-columns: repeat(5, minmax(224px, 1fr)); gap: 12px; }
 .status-5 { background: #b7791f; }
 .status-6 { background: #7a4a8c; }
 .approve-tick { display: block; width: 100%; margin: 4px 0 8px; border: 1px solid var(--good); background: #edf8f3; color: var(--good); border-radius: 7px; padding: 6px 8px; font-size: 12px; font-weight: 500; }
@@ -393,3 +393,4 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
   .app-shell { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
   .topbar select[aria-label="มุมมอง"] { display: none; }
 }
+.status-3 { background: #3b5b92; }

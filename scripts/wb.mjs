@@ -12,13 +12,14 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const STATUSES = ['รอดำเนินการ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
+const STATUSES = ['รอดำเนินการ', 'กำลังทำ', 'รอทดสอบ', 'รอทดสอบ/เปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
+const ACTIVE = [6, 0, 1, 3, 4]; // 2 and 5 retired (migration 007)
 const FIELDS = ['title', 'feature', 'public_summary', 'scope', 'criteria', 'evidence', 'assignee', 'blocked_reason', 'planned_go_live_on'];
 const HELP = `Workboard CLI — node scripts/wb.mjs <command> [...]
 
 อ่าน
   projects                                 รายชื่อโปรเจกต์ที่ลิงก์นี้เข้าถึงได้
-  tasks [--project ID|ชื่อ] [--status 0-6] [--open] [--q คำค้น]
+  tasks [--project ID|ชื่อ] [--status 6|0|1|3|4] [--open] [--q คำค้น]
                                            รายการงาน (--open = ยังไม่เปิดใช้งาน)
   show TASK                                รายละเอียดเต็ม + งานย่อย (พร้อม id) + ประวัติล่าสุด
 
@@ -29,7 +30,7 @@ const HELP = `Workboard CLI — node scripts/wb.mjs <command> [...]
   sub-undo TASK SUBID                      เปิดงานย่อยใหม่
   sub-note TASK SUBID "โน้ต"
   sub-rm TASK SUBID
-  status TASK 0-6                          ย้ายสถานะ (6 รออนุมัติ · 5 รอตัดสินใจ · 0 รอดำเนินการ · 1 กำลังทำ · 2 รอทดสอบ · 3 รอเปิดใช้ · 4 เปิดใช้งานแล้ว)
+  status TASK 6|0|1|3|4                    ย้ายสถานะ (6 รออนุมัติ · 0 รอดำเนินการ · 1 กำลังทำ · 3 รอทดสอบ/เปิดใช้ · 4 เปิดใช้งานแล้ว)
                                            งานใหญ่กระทบทั้งระบบเริ่มที่ 6 · แก้บั๊ก/ข้อมูลเริ่มที่ 0 · งานใน 6 เริ่มได้เมื่อผู้อนุมัติกดอนุมัติเท่านั้น
   set TASK field=value [field=@file.md ...]
                                            แก้ฟิลด์: ${FIELDS.join(', ')}
@@ -142,7 +143,7 @@ switch (command) {
   case 'sub-note': await subtask(args[0], { op: 'set', id: args[1], note: args[2] ?? '' }, 'บันทึกโน้ตงานย่อย'); break;
   case 'sub-rm': await subtask(args[0], { op: 'remove', id: args[1] }, 'ลบงานย่อย'); break;
   case 'status': {
-    const s = Number(args[1]); if (!Number.isInteger(s) || s < 0 || s > 6) fail('สถานะต้องเป็น 0-6');
+    const s = Number(args[1]); if (!ACTIVE.includes(s)) fail('สถานะต้องเป็น 6, 0, 1, 3 หรือ 4');
     const t = await patch(await task(args[0]), { status: s }); out(t, `✓ ${pad(t.id)} → ${STATUSES[t.status]}`); break;
   }
   case 'set': { const t = await patch(await task(args[0]), parseFields(args.slice(1))); out(t, `✓ บันทึก ${pad(t.id)} ${t.title} (version ${t.version})`); break; }

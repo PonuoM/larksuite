@@ -1,14 +1,15 @@
 <?php
 declare(strict_types=1);
 date_default_timezone_set('UTC');
-// Status codes are stable ids; 5 and 6 were appended by migration 006. Board order (owner, 2026-09-18):
-// รออนุมัติ(6) → รอตัดสินใจ(5) → รอดำเนินการ(0) → กำลังทำ(1) → รอทดสอบ(2) → รอเปิดใช้(3) → เปิดใช้งานแล้ว(4).
-// Big, system-wide work (anything the telesales team must be told about) starts in รออนุมัติ; bug and data fixes
-// start in รอดำเนินการ. Approvers (e.g. the CEO) comment on and approve 6 and 5; approval moves the task to 0.
-const TASK_STATUSES = ['รอดำเนินการ','กำลังทำ','รอทดสอบ','รอเปิดใช้','เปิดใช้งานแล้ว','รอตัดสินใจ','รออนุมัติ'];
+// Status codes are stable ids (6 appended by migration 006). Board, owner 2026-09-18, five columns:
+// รออนุมัติ(6) → รอดำเนินการ(0) → กำลังทำ(1) → รอทดสอบ/เปิดใช้(3) → เปิดใช้งานแล้ว(4).
+// Codes 2 (รอทดสอบ) and 5 (รอตัดสินใจ) were merged into 3 and 0 by migration 007: kept here only so old history
+// reads correctly, never accepted as input. Big, system-wide work starts in รออนุมัติ; the approver (e.g. the CEO)
+// approves it into รอดำเนินการ. Bug and data fixes start in รอดำเนินการ. Open questions live in blocked_reason.
+const TASK_STATUSES = ['รอดำเนินการ','กำลังทำ','รอทดสอบ','รอทดสอบ/เปิดใช้','เปิดใช้งานแล้ว','รอตัดสินใจ','รออนุมัติ'];
+const ACTIVE_STATUSES = [6,0,1,3,4];
 const STATUS_AWAITING_APPROVAL = 6;
-const STATUS_AWAITING_DECISION = 5;
-const APPROVABLE_STATUSES = [5,6];
+const REJECTED_PREFIX = 'ไม่อนุมัติ: ';
 function config(): array {
     static $config;
     if ($config === null) {
@@ -139,7 +140,7 @@ function taskData(array $data): array {
         $out['planned_go_live_on']=$due;
     }
     $status=$data['status']??0;
-    if (!is_int($status)||!isset(TASK_STATUSES[$status])) reply(422,'สถานะไม่ถูกต้อง');
+    if (!is_int($status)||!in_array($status,ACTIVE_STATUSES,true)) reply(422,'สถานะไม่ถูกต้อง');
     $out['status']=$status;
     $list=$data['checklist']??[];
     if (!is_array($list)||count($list)>100) reply(422,'งานย่อยไม่ถูกต้อง (สูงสุด 100 ข้อ)');

@@ -13,7 +13,7 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
  const scoped=tasks.filter(t=>!projectId||t.project_id===projectId);
  const active=scoped.filter(t=>t.status!==4);
  // Waiting for a decision = the รอตัดสินใจ column or any open task with a blocked reason.
- const needsDecision=(t:Task)=>t.status!==4&&(t.status===5||!!t.blocked_reason);
+ const needsDecision=(t:Task)=>t.status!==4&&!!t.blocked_reason;
  const blockers=active.filter(needsDecision);const awaitingApproval=active.filter(t=>t.status===6);
  const released=(t:Task)=>t.status===4&&!!t.actual_released_at&&t.actual_released_at.slice(0,10)>=start&&t.actual_released_at.slice(0,10)<=end;
  const delivered=scoped.filter(released);
@@ -21,9 +21,9 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
  const groupsFor=(pt:Task[])=>[
   {label:'ส่งมอบในสัปดาห์นี้',items:pt.filter(released),tone:'good'},
   {label:'กำลังทำ',items:pt.filter(t=>t.status===1&&!t.blocked_reason),tone:''},
-  {label:'รอทดสอบ / รอเปิดใช้',items:pt.filter(t=>(t.status===2||t.status===3)&&!t.blocked_reason),tone:''},
+  {label:'รอทดสอบ / เปิดใช้',items:pt.filter(t=>t.status===3&&!t.blocked_reason),tone:''},
   {label:'รออนุมัติ',items:pt.filter(t=>t.status===6&&!t.blocked_reason),tone:''},
-  {label:'รอข้อสรุป / รอตัดสินใจ',items:pt.filter(needsDecision),tone:'accent'},
+  {label:'รอข้อสรุป',items:pt.filter(needsDecision),tone:'accent'},
  ];
  function download() {
   const lines=['# รายงานสัปดาห์',dateLabel(start)+' – '+dateLabel(end),''];
@@ -40,6 +40,6 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
       {waiting>0&&<p className="muted report-waiting">รอดำเนินการ {waiting} งาน · <button className="text-action" onClick={()=>onProject(p.id,true)}>ดูในบอร์ด</button></p>}
       {groups.every(g=>!g.items.length)&&!waiting&&<p className="muted">ไม่มีรายการในช่วงนี้</p>}</div></section>})}
   </div>
-  <aside className="overview-aside">{awaitingApproval.length>0&&<><h2>รออนุมัติ <small>{awaitingApproval.length}</small></h2>{awaitingApproval.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2></button>)}</>}<h2>ต้องการข้อสรุป</h2>{blockers.length?blockers.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2><p className="blocked">{t.blocked_reason||'อยู่ในคอลัมน์ “รอตัดสินใจ”'}</p></button>):<p className="muted">ไม่มีเรื่องติดขัดในข้อมูลที่คุณเข้าถึงได้</p>}</aside></div>
+  <aside className="overview-aside">{awaitingApproval.length>0&&<><h2>รออนุมัติ <small>{awaitingApproval.length}</small></h2>{awaitingApproval.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2></button>)}</>}<h2>ต้องการข้อสรุป</h2>{blockers.length?blockers.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2><p className="blocked">{t.blocked_reason}</p></button>):<p className="muted">ไม่มีเรื่องติดขัดในข้อมูลที่คุณเข้าถึงได้</p>}</aside></div>
  </div></>;
 }

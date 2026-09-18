@@ -71,7 +71,8 @@ function taskUpdateRoutes(string $route,string $method,array $u): void {
     $role=roleFor($u,(int)$t['project_id']);
     $d=body();
     // Approval is a per-person right (can_approve), so it works from any project role, including a view-only link.
-    // approve: รออนุมัติ or รอตัดสินใจ → รอดำเนินการ · reject (reason required): รออนุมัติ → รอตัดสินใจ
+    // approve: รออนุมัติ → รอดำเนินการ · reject (reason required): stays in รออนุมัติ with the reason in blocked_reason,
+    // so the team revises it and the approver decides again; a later approval clears that reason.
     if($kind==='approve') {
         if(!(int)$u['can_approve'])reply(403,'ต้องมีสิทธิ์ผู้อนุมัติ');
         $decision=$d['decision']??'';
@@ -80,14 +81,16 @@ function taskUpdateRoutes(string $route,string $method,array $u): void {
         db()->beginTransaction();
         $t=query('SELECT * FROM tasks WHERE id=? AND archived=0 FOR UPDATE',[$id])->fetch();
         $from=$t?(int)$t['status']:-1;
-        $allowed=$decision==='approve'?in_array($from,APPROVABLE_STATUSES,true):$from===STATUS_AWAITING_APPROVAL;
-        if(!$allowed){db()->rollBack();reply(409,'งานนี้ไม่ได้อยู่ในคอลัมน์ที่อนุมัติได้แล้ว กรุณาโหลดใหม่');}
-        if($decision==='approve')query('UPDATE tasks SET status=0,approved_by=?,approved_at=UTC_TIMESTAMP(),version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[$u['id'],$id]);
-        else query('UPDATE tasks SET status=?,approved_by=NULL,approved_at=NULL,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[STATUS_AWAITING_DECISION,$id]);
-        $to=$decision==='approve'?0:STATUS_AWAITING_DECISION;
+        if($from!==STATUS_AWAITING_APPROVAL){db()->rollBack();reply(409,'งานนี้ไม่ได้อยู่ในคอลัมน์รออนุมัติแล้ว กรุณาโหลดใหม่');}
+        if($decision==='approve') {
+            $blocked=strpos((string)$t['blocked_reason'],REJECTED_PREFIX)===0?'':$t['blocked_reason'];
+            query('UPDATE tasks SET status=0,blocked_reason=?,approved_by=?,approved_at=UTC_TIMESTAMP(),version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[$blocked,$u['id'],$id]);
+        }
+        else query('UPDATE tasks SET blocked_reason=?,approved_by=NULL,approved_at=NULL,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[REJECTED_PREFIX.$note,$id]);
+        $to=$decision==='approve'?0:STATUS_AWAITING_APPROVAL;
         event($id,$u,$decision==='approve'?'approved':'rejected',['note'=>$note,'status'=>['from'=>$from,'to'=>$to]]);
         $saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
-        reply(200,$decision==='approve'?'อนุมัติแล้ว ย้ายไป "รอดำเนินการ"':'ไม่อนุมัติ ย้ายไป "รอตัดสินใจ"',taskDto($saved,$role));
+        reply(200,$decision==='approve'?'อนุมัติแล้ว ย้ายไป "รอดำเนินการ"':'บันทึกเหตุผลที่ไม่อนุมัติแล้ว งานยังอยู่ใน "รออนุมัติ"',taskDto($saved,$role));
     }
     // Approvers may comment (progress notes) even from a view-only link; they cannot notify Lark or edit.
     if($kind==='notes'&&$role==='reviewer') {
