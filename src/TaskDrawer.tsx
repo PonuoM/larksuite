@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import type { ChecklistItem, LarkTarget, Project, Task, TaskEvent } from './types';
 
-export const STATUSES = ['รอทำ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว'];
+// Index = status code stored in the database (5 and 6 appended by migration 006).
+export const STATUSES = ['รอทำ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
+// Column order on the board and in pickers: decide → do → test → approve → release.
+export const STATUS_ORDER = [5, 0, 1, 2, 6, 3, 4];
+export const AWAITING_APPROVAL = 6;
 export const EMPTY_TASK: Omit<Task, 'id' | 'project_id' | 'updated_at' | 'version' | 'actual_released_at'> = {
   title: '', feature: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '',
   blocked_reason: '', checklist: [], status: 0, planned_go_live_on: '', archived: 0,
@@ -37,12 +41,12 @@ function NotifyPicker({ targets, value, onChange, label = 'แจ้ง Lark' }:
 }
 
 type Props = {
-  task: Task; projects: Project[]; editable: boolean; busy: boolean; larkTargets: LarkTarget[];
+  task: Task; projects: Project[]; editable: boolean; canApprove: boolean; busy: boolean; larkTargets: LarkTarget[];
   onClose: () => void; onSave: (t: Task, notify: Notify, notifyText: string) => void;
   onChanged: (t: Task) => void; onDeleted: (t: Task) => void; onError: (s: string) => void; onNotice: (s: string) => void;
 };
 
-export default function TaskDrawer({ task, projects, editable, busy, larkTargets, onClose, onSave, onChanged, onDeleted, onError, onNotice }: Props) {
+export default function TaskDrawer({ task, projects, editable, canApprove, busy, larkTargets, onClose, onSave, onChanged, onDeleted, onError, onNotice }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   async function remove() {
@@ -66,10 +70,11 @@ export default function TaskDrawer({ task, projects, editable, busy, larkTargets
       <header><div><small>{isNew ? 'งานใหม่' : `#${String(task.id).padStart(3, '0')} · ${projects.find((p) => p.id === task.project_id)?.name ?? ''}`}</small><h1>{draft.title || 'ตั้งชื่องาน'}</h1></div><button className="icon-button" onClick={onClose} aria-label="ปิด">×</button></header>
       {!isNew && editable && <div className="drawer-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>รายละเอียด</button><button className={tab === 'progress' ? 'active' : ''} onClick={() => setTab('progress')}>ความคืบหน้า / ประวัติ</button></div>}
       {tab === 'progress' ? <ProgressTab task={draft} larkTargets={larkTargets} onError={onError} onNotice={onNotice} /> : <form className="drawer-body" onSubmit={(e) => { e.preventDefault(); onSave(isNew ? { ...EMPTY_TASK, ...draft } as Task : draft, notify, notifyText); }}>
+        {canApprove && !isNew && draft.status === AWAITING_APPROVAL && <ApprovalPanel task={draft} onDone={(saved) => { onChanged(saved); onNotice(saved.status === 3 ? 'อนุมัติแล้ว ย้ายไป “รอเปิดใช้”' : 'ไม่อนุมัติ ส่งกลับไป “กำลังทำ”'); onClose(); }} onError={onError} />}
         {editable ? <>
           <Field label="โปรเจกต์"><select value={draft.project_id} disabled={!isNew} onChange={(e) => field('project_id', Number(e.target.value))}>{projects.filter((p) => p.id === draft.project_id || p.role !== 'viewer').map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="ชื่องาน"><input required value={draft.title} onChange={(e) => field('title', e.target.value)} placeholder="สิ่งที่จะได้เมื่อเสร็จ เช่น หน้าโทรออกแบบใหม่สำหรับทีมเทเล" /></Field>
-          <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUSES.map((s, i) => <option key={s} value={i}>{s}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
+          <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUS_ORDER.map((i) => <option key={i} value={i} disabled={i !== draft.status && task.status === AWAITING_APPROVAL && (i === 3 || i === 4)}>{STATUSES[i]}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
           <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} /></Field></div>
           <Field label="สรุปสำหรับผู้ชมภายนอก"><textarea rows={3} value={draft.public_summary} onChange={(e) => field('public_summary', e.target.value)} placeholder="1–2 ประโยคที่คนนอกทีมอ่านแล้วเข้าใจ: ทำอะไร เพื่อใคร ตอนนี้ถึงไหน" /></Field>
         </> : <ViewerSummary task={draft} projects={projects} />}
@@ -80,6 +85,7 @@ export default function TaskDrawer({ task, projects, editable, busy, larkTargets
           <TemplateField label="เกณฑ์ตรวจรับ" rows={5} value={draft.criteria ?? ''} template={CRITERIA_TEMPLATE} onChange={(v) => field('criteria', v)} />
           <Field label="หลักฐาน"><textarea rows={4} value={draft.evidence ?? ''} onChange={(e) => field('evidence', e.target.value)} placeholder="ลิงก์ commit / PR / หน้าจอ / ผลทดสอบ" /></Field>
         </>}
+        {draft.approved_at && <p className="approved-line">✓ อนุมัติเมื่อ {dateTime(draft.approved_at)}</p>}
         {!isNew && <div className="read-only"><span>เปิดใช้จริง</span><strong>{formatDate(draft.actual_released_at)}</strong><span>แก้ไขล่าสุด</span><strong>{dateTime(draft.updated_at)}</strong></div>}
         {/* The delete confirmation lives in the sticky action bar so it is visible however long the form is. */}
         {editable && <div className="drawer-actions">
@@ -93,6 +99,30 @@ export default function TaskDrawer({ task, projects, editable, busy, larkTargets
       </form>}
     </aside>
   </div>;
+}
+
+// Shown to people with the approver right (e.g. the CEO) while the task is in รออนุมัติ.
+export async function decide(taskId: number, decision: 'approve' | 'reject', note = '') {
+  return api<Task>(`/tasks/${taskId}/approve`, { method: 'POST', body: JSON.stringify({ decision, note }) });
+}
+function ApprovalPanel({ task, onDone, onError }: { task: Task; onDone: (t: Task) => void; onError: (s: string) => void }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function run(decision: 'approve' | 'reject') {
+    setBusy(true);
+    try { onDone(await decide(task.id, decision, note)); } catch (e) { onError(message(e)); } finally { setBusy(false); }
+  }
+  return <section className="approval-panel" aria-label="อนุมัติงาน">
+    <strong>งานนี้รอคุณอนุมัติ</strong>
+    <p>ตรวจรายละเอียด งานย่อย และหลักฐานด้านล่าง ถ้าโอเคกดอนุมัติ งานจะย้ายไป “รอเปิดใช้”</p>
+    {rejecting && <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="เหตุผลที่ไม่อนุมัติ / สิ่งที่ต้องแก้" aria-label="เหตุผลที่ไม่อนุมัติ" />}
+    <div className="approval-actions">
+      {rejecting
+        ? <><button type="button" className="secondary" onClick={() => setRejecting(false)}>กลับ</button><button type="button" className="danger" disabled={busy || !note.trim()} onClick={() => run('reject')}>ส่งกลับไปแก้</button></>
+        : <><button type="button" className="secondary" onClick={() => setRejecting(true)}>ไม่อนุมัติ</button><button type="button" className="primary" disabled={busy} onClick={() => run('approve')}>{busy ? 'กำลังบันทึก…' : '✓ อนุมัติ'}</button></>}
+    </div>
+  </section>;
 }
 
 function ViewerSummary({ task, projects }: { task: Task; projects: Project[] }) {
@@ -175,6 +205,8 @@ function describe(event: TaskEvent): { title: string; body?: string } {
     case 'created': return { title: 'สร้างงาน' };
     case 'imported': return { title: 'นำเข้า', body: [p.source, p.status].filter(Boolean).join(' · ') };
     case 'archived': return { title: 'ลบงาน' };
+    case 'approved': return { title: '✓ อนุมัติ', body: p.note || 'ย้ายไป “รอเปิดใช้”' };
+    case 'rejected': return { title: 'ไม่อนุมัติ', body: p.note };
     case 'lark_notified': return { title: 'แจ้งกลุ่ม Lark (' + (p.target === 'main' ? 'กลุ่มจริง' : 'กลุ่มทดสอบ') + ')', body: p.headline };
     default: return { title: event.action };
   }

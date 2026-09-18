@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 date_default_timezone_set('UTC');
+// Status codes are stable ids; 5 and 6 were appended by migration 006. The board orders them by workflow:
+// รอตัดสินใจ(5) → รอทำ(0) → กำลังทำ(1) → รอทดสอบ(2) → รออนุมัติ(6) → รอเปิดใช้(3) → เปิดใช้งานแล้ว(4).
+const TASK_STATUSES = ['รอทำ','กำลังทำ','รอทดสอบ','รอเปิดใช้','เปิดใช้งานแล้ว','รอตัดสินใจ','รออนุมัติ'];
+const STATUS_AWAITING_APPROVAL = 6;
 function config(): array {
     static $config;
     if ($config === null) {
@@ -40,7 +44,7 @@ function cookieToken(string $value,int $expires): void {
 function sessionUser(): ?array {
     $token=$_COOKIE['workboard_session']??'';
     if (!preg_match('/^[a-f0-9]{64}$/',$token)) return null;
-    $row=query('SELECT p.id,p.label,p.is_admin,s.csrf_token,s.token_hash,s.invitation_id FROM access_sessions s JOIN principals p ON p.id=s.principal_id LEFT JOIN invitations i ON i.id=s.invitation_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP() AND p.revoked_at IS NULL AND i.revoked_at IS NULL',[hash('sha256',$token)])->fetch();
+    $row=query('SELECT p.id,p.label,p.is_admin,p.can_approve,s.csrf_token,s.token_hash,s.invitation_id FROM access_sessions s JOIN principals p ON p.id=s.principal_id LEFT JOIN invitations i ON i.id=s.invitation_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP() AND p.revoked_at IS NULL AND i.revoked_at IS NULL',[hash('sha256',$token)])->fetch();
     return $row?:null;
 }
 // Lookup is by hash. Permanent links also keep an AES-256-GCM copy (LINK_KEY in .env) so admins can show them
@@ -63,7 +67,7 @@ function issueLink(int $principalId,bool $permanent): string {
     query($permanent?'INSERT INTO invitations(principal_id,token_hash,token_cipher,reusable,expires_at) VALUES(?,?,?,1,NULL)':'INSERT INTO invitations(principal_id,token_hash,token_cipher,reusable,expires_at) VALUES(?,?,?,0,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY))',[$principalId,hash('sha256',$token),$permanent?sealToken($token):null]);
     return linkUrl($token);
 }
-function publicUser(array $u): array {return ['id'=>(int)$u['id'],'label'=>$u['label'],'is_admin'=>(bool)$u['is_admin']];}
+function publicUser(array $u): array {return ['id'=>(int)$u['id'],'label'=>$u['label'],'is_admin'=>(bool)$u['is_admin'],'can_approve'=>(bool)$u['can_approve']];}
 function requireUser(): array {$u=sessionUser();if (!$u) reply(401,'กรุณาเปิดลิงก์เชิญที่ยังใช้งานได้');return $u;}
 function requireCsrf(array $u): void {
     if (!hash_equals($u['csrf_token'],$_SERVER['HTTP_X_CSRF_TOKEN']??'')) reply(403,'คำขอหมดอายุ กรุณาโหลดหน้าใหม่');
@@ -101,7 +105,7 @@ function checklistItems(string $json): array {
     return $out;
 }
 function taskDto(array $t,string $role): array {
-    $out=['id'=>(int)$t['id'],'project_id'=>(int)$t['project_id'],'title'=>$t['title'],'public_summary'=>$t['public_summary'],'status'=>(int)$t['status'],'planned_go_live_on'=>$t['planned_go_live_on'],'actual_released_at'=>$t['actual_released_at'],'updated_at'=>$t['updated_at'],'version'=>(int)$t['version']];
+    $out=['id'=>(int)$t['id'],'project_id'=>(int)$t['project_id'],'title'=>$t['title'],'public_summary'=>$t['public_summary'],'status'=>(int)$t['status'],'planned_go_live_on'=>$t['planned_go_live_on'],'actual_released_at'=>$t['actual_released_at'],'updated_at'=>$t['updated_at'],'version'=>(int)$t['version'],'approved_at'=>$t['approved_at']??null];
     $list=checklistItems($t['checklist']);
     // Viewers see sub-task names and progress, never the internal notes.
     $out['checklist']=$role==='viewer'?array_map(function($c){return ['id'=>$c['id'],'label'=>$c['label'],'done'=>$c['done']];},$list):$list;
@@ -129,7 +133,7 @@ function taskData(array $data): array {
         $out['planned_go_live_on']=$due;
     }
     $status=$data['status']??0;
-    if (!is_int($status)||$status<0||$status>4) reply(422,'สถานะไม่ถูกต้อง');
+    if (!is_int($status)||!isset(TASK_STATUSES[$status])) reply(422,'สถานะไม่ถูกต้อง');
     $out['status']=$status;
     $list=$data['checklist']??[];
     if (!is_array($list)||count($list)>100) reply(422,'งานย่อยไม่ถูกต้อง (สูงสุด 100 ข้อ)');

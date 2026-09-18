@@ -4,6 +4,7 @@ export type SessionUser = {
   id: number;
   label: string;
   is_admin: boolean;
+  can_approve: boolean;
 };
 
 export type Project = {
@@ -36,6 +37,7 @@ export type Task = {
   archived?: number;
   // Present only in a write response when the change was saved but the Lark notice failed.
   lark_warning?: string;
+  approved_at?: string | null;
 };
 
 export type TaskEvent = {
@@ -62,6 +64,7 @@ export type AccessMember = {
   id: number;
   label: string;
   is_admin: boolean;
+  can_approve: boolean;
   revoked_at: string | null;
   created_at: string;
   projects: { project_id: number; project_name: string; role: Role }[];

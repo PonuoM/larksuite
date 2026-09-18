@@ -2,7 +2,6 @@
 declare(strict_types=1);
 // Incremental task updates for people and AI agents: sub-task operations, progress notes and Lark group notices.
 // Sub-task operations merge on the server under a row lock, so they need no version and never overwrite each other.
-const TASK_STATUSES = ['รอทำ','กำลังทำ','รอทดสอบ','รอเปิดใช้','เปิดใช้งานแล้ว'];
 const LARK_TARGETS = ['main'=>'กลุ่มจริง','test'=>'กลุ่มทดสอบ'];
 
 function larkTargets(): array {
@@ -65,12 +64,28 @@ function withLarkWarning(array $dto,?string $warning): array {return $warning===
 
 function taskUpdateRoutes(string $route,string $method,array $u): void {
     if($route==='/lark/targets'&&$method==='GET')reply(200,'กลุ่ม Lark',larkTargets());
-    if(!preg_match('~^/tasks/(\d+)/(subtasks|notes|notify)$~',$route,$m))return;
+    if(!preg_match('~^/tasks/(\d+)/(subtasks|notes|notify|approve)$~',$route,$m))return;
     if($method!=='POST')reply(405,'วิธีเรียกไม่ถูกต้อง');
     $id=(int)$m[1];$kind=$m[2];
     $t=query('SELECT * FROM tasks WHERE id=? AND archived=0',[$id])->fetch();if(!$t)reply(404,'ไม่พบงาน');
-    $role=roleFor($u,(int)$t['project_id']);editable($role);
-    $d=body();$target=notifyTarget($d);
+    $role=roleFor($u,(int)$t['project_id']);
+    $d=body();
+    // Approval is a per-person right (can_approve), so it works from any project role, including a view-only link.
+    if($kind==='approve') {
+        if(!(int)$u['can_approve'])reply(403,'ต้องมีสิทธิ์ผู้อนุมัติ');
+        $decision=$d['decision']??'';
+        if(!in_array($decision,['approve','reject'],true))reply(422,'decision ต้องเป็น approve หรือ reject');
+        $note=textField($d,'note',2000,$decision==='reject');
+        db()->beginTransaction();
+        $t=query('SELECT * FROM tasks WHERE id=? AND archived=0 FOR UPDATE',[$id])->fetch();
+        if(!$t||(int)$t['status']!==STATUS_AWAITING_APPROVAL){db()->rollBack();reply(409,'งานนี้ไม่ได้อยู่ในคอลัมน์รออนุมัติแล้ว กรุณาโหลดใหม่');}
+        if($decision==='approve')query('UPDATE tasks SET status=3,approved_by=?,approved_at=UTC_TIMESTAMP(),version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[$u['id'],$id]);
+        else query('UPDATE tasks SET status=1,approved_by=NULL,approved_at=NULL,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[$id]);
+        event($id,$u,$decision==='approve'?'approved':'rejected',['note'=>$note,'status'=>['from'=>STATUS_AWAITING_APPROVAL,'to'=>$decision==='approve'?3:1]]);
+        $saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
+        reply(200,$decision==='approve'?'อนุมัติแล้ว ย้ายไป "รอเปิดใช้"':'ไม่อนุมัติ ส่งกลับไป "กำลังทำ"',taskDto($saved,$role));
+    }
+    editable($role);$target=notifyTarget($d);
 
     if($kind==='notify') {
         if(!$target)reply(422,'กรุณาเลือกกลุ่ม Lark');

@@ -5,7 +5,7 @@ import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task }
 import './index.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
-import TaskDrawer, { EMPTY_TASK, STATUSES, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
+import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, AWAITING_APPROVAL, decide, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
 type View = 'board' | 'overview' | 'calendar' | 'access';
 // Everyone lands on the board. Old ?view=report links open the merged overview/report page.
@@ -144,6 +144,20 @@ function App() {
     } finally { setMoving((m) => m.filter((id) => id !== task.id)); }
   }
 
+  async function approveTask(task: Task) {
+    if (moving.includes(task.id)) return;
+    setMoving((m) => [...m, task.id]);
+    try {
+      const saved = await decide(task.id, 'approve');
+      taskLoadSeq.current++;
+      setTasks((current) => current.map((t) => t.id === saved.id ? saved : t));
+      setNotice(`อนุมัติ “${saved.title}” แล้ว ย้ายไป “รอเปิดใช้”`);
+    } catch (e) {
+      setError(message(e));
+      if (e instanceof ApiError && e.status === 409) await loadTasks();
+    } finally { setMoving((m) => m.filter((id) => id !== task.id)); }
+  }
+
   async function logout() {
     await api('/logout', { method: 'POST', body: '{}' });
     setSession({ user: null }); setProjects([]); setTasks([]);
@@ -176,7 +190,7 @@ function App() {
           <span className="project-avatar">{p.name.slice(0, 2).toUpperCase()}</span><span className="truncate">{p.name}</span><small>{tasks.filter(t=>t.project_id===p.id&&t.status!==4).length}</small>
         </button>)}
       </nav>
-      <div className="profile"><span className="avatar">{session.user.label.slice(0, 1)}</span><div className="truncate"><strong>{session.user.label}</strong><small>{session.user.is_admin ? 'ผู้ดูแล' : 'สมาชิก'}</small></div><button className="icon-button" onClick={logout} title="ออกจากอุปกรณ์นี้">↪</button></div>
+      <div className="profile"><span className="avatar">{session.user.label.slice(0, 1)}</span><div className="truncate"><strong>{session.user.label}</strong><small>{session.user.is_admin ? 'ผู้ดูแล' : 'สมาชิก'}{session.user.can_approve ? ' · ผู้อนุมัติ' : ''}</small></div><button className="icon-button" onClick={logout} title="ออกจากอุปกรณ์นี้">↪</button></div>
     </aside>
     <main className="workspace">
       {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} onProjectsChanged={loadProjects} onBack={() => setView('board')} /> : <>
@@ -190,20 +204,21 @@ function App() {
           <span className="toolbar-count">{visible.length} งาน</span>
         </div>
 
-        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : <Board tasks={visible} projects={projects} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} onOpen={setSelected} onMove={moveTask} />}
+        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : <Board tasks={visible} projects={projects} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} canApprove={!!session.user.can_approve} onApprove={approveTask} onOpen={setSelected} onMove={moveTask} />}
         </>}
       </>}
       {notice && !error && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {error && <div className="floating-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
     </main>
-    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
+    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} canApprove={!!session.user.can_approve} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
   </div>;
 }
 
-function Board({ tasks, projects, canEdit, onOpen, onMove }: { tasks: Task[]; projects:Project[]; canEdit:(t:Task)=>boolean; onOpen: (t: Task) => void; onMove: (t: Task, s: number) => void }) {
+function Board({ tasks, projects, canEdit, canApprove, onApprove, onOpen, onMove }: { tasks: Task[]; projects:Project[]; canEdit:(t:Task)=>boolean; canApprove: boolean; onApprove: (t: Task) => void; onOpen: (t: Task) => void; onMove: (t: Task, s: number) => void }) {
   const [dragId, setDragId] = useState<number | null>(null);
   return <div className="board" aria-label="บอร์ด Kanban">
-    {STATUSES.map((status, index) => {
+    {STATUS_ORDER.map((index) => {
+      const status = STATUSES[index];
       const items = tasks.filter((t) => t.status === index);
       return <section key={status} className="column" onDragOver={(e) => e.preventDefault()} onDrop={() => { const task = tasks.find((t) => t.id === dragId); if (task) onMove(task, index); setDragId(null); }}>
         <header><span className={`status-dot status-${index}`} /> <strong>{status}</strong><small>{items.length}</small></header>
@@ -215,6 +230,7 @@ function Board({ tasks, projects, canEdit, onOpen, onMove }: { tasks: Task[]; pr
             <ProgressBar list={task.checklist} />
             {task.blocked_reason && <p className="blocked">! {task.blocked_reason}</p>}
             <div className={`deadline ${task.status !== 4 && task.planned_go_live_on && task.planned_go_live_on < new Date().toISOString().slice(0, 10) ? 'overdue' : ''}`}>▣ {task.planned_go_live_on ? `เริ่มใช้ ${formatDate(task.planned_go_live_on)}` : 'ยังไม่กำหนดวันเริ่มใช้'}</div>
+            {task.status === AWAITING_APPROVAL && canApprove && <button type="button" className="approve-tick" onClick={(e) => { e.stopPropagation(); onApprove(task); }} onKeyDown={(e) => e.stopPropagation()} aria-label={'อนุมัติ ' + task.title}>✓ อนุมัติ</button>}
             <footer><span>{task.assignee || 'ยังไม่ระบุผู้รับผิดชอบ'}</span><span>#{String(task.id).padStart(3, '0')}</span></footer>
           </article>)}
           {!items.length && <div className="drop-empty">ลากงานมาวางที่นี่</div>}
@@ -277,6 +293,9 @@ function AccessManager({ projects, onProjectsChanged, onBack }: { projects: Proj
       setIssued({ memberId, link: data.link, permanent: data.permanent }); await load();
     });
   }
+  function setApprover(member: AccessMember, value: boolean) {
+    run(async () => { await api(`/access/${member.id}/approver`, { method: 'POST', body: JSON.stringify({ can_approve: value }) }); await load(); });
+  }
   function closeLink(linkId: number) {
     run(async () => { await api(`/access/links/${linkId}/close`, { method: 'POST', body: '{}' }); setClosing(0); await load(); });
   }
@@ -316,7 +335,7 @@ function AccessManager({ projects, onProjectsChanged, onBack }: { projects: Proj
         <div className="member-list">{visibleMembers.map((member) => {
           const links = member.links.filter((l) => showRevoked || !l.revoked_at);
           return <article key={member.id} className={member.revoked_at ? 'member revoked' : 'member'}>
-            <header><div><strong>{member.label}</strong><span>{member.is_admin ? 'ผู้ดูแล · ทุกโปรเจกต์' : member.projects.map((p) => p.project_name).join(', ') + ' · ' + (member.projects[0]?.role === 'editor' ? 'แก้ไข' : 'ดู')}</span></div>
+            <header><div><strong>{member.label}</strong><span>{member.is_admin ? 'ผู้ดูแล · ทุกโปรเจกต์' : member.projects.map((p) => p.project_name).join(', ') + ' · ' + (member.projects[0]?.role === 'editor' ? 'แก้ไข' : 'ดู')}</span>{!member.revoked_at && <label className="approver-toggle"><input type="checkbox" checked={member.can_approve} disabled={busy} onChange={(e) => setApprover(member, e.target.checked)} /> ผู้อนุมัติ (กดอนุมัติงานในคอลัมน์ “รออนุมัติ”)</label>}</div>
               {member.revoked_at ? <small>ยกเลิกสมาชิกแล้ว</small> : <div className="member-actions"><button className="secondary" disabled={busy} onClick={() => newLink(member.id)}>+ ลิงก์ถาวรใหม่</button>{revoking === member.id ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => run(async () => { await api('/access/' + member.id + '/revoke', { method: 'POST', body: '{}' }); setRevoking(0); await load(); })}>ยืนยันยกเลิกสมาชิก</button><button className="text-action" onClick={() => setRevoking(0)}>ไม่ยกเลิก</button></span> : <button className="danger-text" onClick={() => setRevoking(member.id)}>ยกเลิกสมาชิก</button>}</div>}
             </header>
             {links.length > 0 && <ul className="link-list">{links.map((link) => <li key={link.id} className={link.revoked_at ? 'closed' : ''}>

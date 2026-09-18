@@ -39,7 +39,7 @@ try {
  if ($route==='/projects'&&$method==='POST') {requireAdmin($u);$d=body();query('INSERT INTO projects(name,description) VALUES(?,?)',[textField($d,'name',120,true),textField($d,'description',2000)]);reply(201,'สร้างโปรเจกต์แล้ว',['id'=>(int)db()->lastInsertId()]);}
  if ($route==='/access'&&$method==='GET') {
     requireAdmin($u);$members=[];
-    foreach(query('SELECT id,label,is_admin,revoked_at,created_at FROM principals ORDER BY id DESC')->fetchAll() as $p)$members[(int)$p['id']]=['id'=>(int)$p['id'],'label'=>$p['label'],'is_admin'=>(bool)$p['is_admin'],'revoked_at'=>$p['revoked_at'],'created_at'=>$p['created_at'],'projects'=>[],'links'=>[]];
+    foreach(query('SELECT id,label,is_admin,can_approve,revoked_at,created_at FROM principals ORDER BY id DESC')->fetchAll() as $p)$members[(int)$p['id']]=['id'=>(int)$p['id'],'label'=>$p['label'],'is_admin'=>(bool)$p['is_admin'],'can_approve'=>(bool)$p['can_approve'],'revoked_at'=>$p['revoked_at'],'created_at'=>$p['created_at'],'projects'=>[],'links'=>[]];
     foreach(query('SELECT m.principal_id,m.project_id,m.role,pr.name AS project_name FROM memberships m JOIN projects pr ON pr.id=m.project_id ORDER BY pr.id')->fetchAll() as $m)if(isset($members[(int)$m['principal_id']]))$members[(int)$m['principal_id']]['projects'][]=['project_id'=>(int)$m['project_id'],'project_name'=>$m['project_name'],'role'=>$m['role']];
     foreach(query('SELECT id,principal_id,reusable,token_cipher IS NOT NULL AS viewable,expires_at,consumed_at,last_used_at,revoked_at,created_at FROM invitations ORDER BY id DESC')->fetchAll() as $i)if(isset($members[(int)$i['principal_id']]))$members[(int)$i['principal_id']]['links'][]=['id'=>(int)$i['id'],'reusable'=>(bool)$i['reusable'],'viewable'=>(bool)$i['viewable']&&(bool)$i['reusable']&&!$i['revoked_at'],'expires_at'=>$i['expires_at'],'consumed_at'=>$i['consumed_at'],'last_used_at'=>$i['last_used_at'],'revoked_at'=>$i['revoked_at'],'created_at'=>$i['created_at'],'current'=>(int)$i['id']===(int)$u['invitation_id']];
     reply(200,'สิทธิ์การเข้าถึง',array_values($members));
@@ -82,6 +82,11 @@ try {
     $link=issueLink($pid,$permanent);
     db()->commit();reply(201,$permanent?'ลิงก์ถาวร ใช้ซ้ำได้จนกว่าจะปิด':'ลิงก์นี้ใช้ได้หนึ่งครั้ง ภายใน 7 วัน',['id'=>$pid,'link'=>$link,'permanent'=>$permanent]);
  }
+ if(preg_match('~^/access/(\d+)/approver$~',$route,$m)&&$method==='POST') {
+    requireAdmin($u);$d=body();if(!is_bool($d['can_approve']??null))reply(422,'ต้องระบุ can_approve เป็น true/false');
+    if(query('UPDATE principals SET can_approve=? WHERE id=? AND revoked_at IS NULL',[$d['can_approve']?1:0,(int)$m[1]])->rowCount()!==1&&!query('SELECT id FROM principals WHERE id=? AND revoked_at IS NULL',[(int)$m[1]])->fetch())reply(404,'ไม่พบสมาชิกที่ยังใช้งานได้');
+    reply(200,$d['can_approve']?'ให้สิทธิ์ผู้อนุมัติแล้ว':'ยกเลิกสิทธิ์ผู้อนุมัติแล้ว',['id'=>(int)$m[1],'can_approve'=>$d['can_approve']]);
+ }
  if(preg_match('~^/access/(\d+)/revoke$~',$route,$m)&&$method==='POST') {
     requireAdmin($u);$id=(int)$m[1];if($id===(int)$u['id'])reply(422,'ยกเลิกสิทธิ์ของตัวเองไม่ได้');
     db()->beginTransaction();query('UPDATE principals SET revoked_at=UTC_TIMESTAMP() WHERE id=?',[$id]);query('UPDATE invitations SET revoked_at=UTC_TIMESTAMP() WHERE principal_id=?',[$id]);query('DELETE FROM access_sessions WHERE principal_id=?',[$id]);db()->commit();reply(200,'ยกเลิกทั้งลิงก์และ session แล้ว');
@@ -106,10 +111,14 @@ try {
     if($method==='GET')reply(200,'รายละเอียด',taskDto($t,$role));
     if($method==='PATCH'||$method==='DELETE') {
        editable($role);$data=body();if(!isset($data['version'])||!is_int($data['version']))reply(422,'ต้องระบุ version');
-       $target=notifyTarget($data);$d=$method==='PATCH'?taskData($data):null;db()->beginTransaction();
+       $target=notifyTarget($data);$d=$method==='PATCH'?taskData($data):null;
+       // A task waiting for approval only moves on to release through POST /tasks/{id}/approve.
+       if($d&&(int)$t['status']===STATUS_AWAITING_APPROVAL&&in_array($d['status'],[3,4],true))reply(403,'งานนี้รออนุมัติ ต้องให้ผู้อนุมัติกด "อนุมัติ" ก่อน');
+       db()->beginTransaction();
        if($method==='DELETE')$stmt=query('UPDATE tasks SET archived=1,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$id,$data['version']]);
        else $stmt=query('UPDATE tasks SET title=?,feature=?,public_summary=?,scope=?,criteria=?,evidence=?,assignee=?,blocked_reason=?,checklist=?,status=?,planned_go_live_on=?,actual_released_at=?,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?($t['actual_released_at']?:gmdate('Y-m-d H:i:s')):null,$id,$data['version']]);
        if($stmt->rowCount()!==1){db()->rollBack();reply(409,'มีคนแก้งานนี้แล้ว กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก');}
+       if($d&&$d['status']===STATUS_AWAITING_APPROVAL&&(int)$t['status']!==STATUS_AWAITING_APPROVAL)query('UPDATE tasks SET approved_by=NULL,approved_at=NULL WHERE id=?',[$id]);
        $changes=[];if($d)foreach($d as $key=>$value)if((string)$t[$key]!== (string)$value)$changes[$key]=['from'=>$t[$key],'to'=>$value];
        event($id,$u,$method==='DELETE'?'archived':'updated',$changes);$saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
        $warning=$d?notifyAfterCommit($target,$saved,$u,changeHeadline($changes,$data['notify_text']??'')):null;reply(200,$warning??'บันทึกแล้ว',withLarkWarning(taskDto($saved,$role),$warning));
