@@ -31,7 +31,7 @@ function body(): array {
 }
 function textField(array $data,string $key,int $max,bool $required=false): string {
     $value=$data[$key]??'';
-    if (!is_string($value) || strlen($value)>$max || ($required && trim($value)==='')) reply(422,'ข้อมูลไม่ถูกต้อง: '.$key);
+    if (!is_string($value) || mb_strlen($value,'UTF-8')>$max || ($required && trim($value)==='')) reply(422,'ข้อมูลไม่ถูกต้อง: '.$key);
     return trim($value);
 }
 function cookieToken(string $value,int $expires): void {
@@ -40,8 +40,14 @@ function cookieToken(string $value,int $expires): void {
 function sessionUser(): ?array {
     $token=$_COOKIE['workboard_session']??'';
     if (!preg_match('/^[a-f0-9]{64}$/',$token)) return null;
-    $row=query('SELECT p.id,p.label,p.is_admin,s.csrf_token,s.token_hash FROM access_sessions s JOIN principals p ON p.id=s.principal_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP() AND p.revoked_at IS NULL',[hash('sha256',$token)])->fetch();
+    $row=query('SELECT p.id,p.label,p.is_admin,s.csrf_token,s.token_hash,s.invitation_id FROM access_sessions s JOIN principals p ON p.id=s.principal_id LEFT JOIN invitations i ON i.id=s.invitation_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP() AND p.revoked_at IS NULL AND i.revoked_at IS NULL',[hash('sha256',$token)])->fetch();
     return $row?:null;
+}
+// Only the hash is stored; the full link can be shown to the admin once, at creation.
+function issueLink(int $principalId,bool $permanent): string {
+    $token=bin2hex(random_bytes(32));
+    query($permanent?'INSERT INTO invitations(principal_id,token_hash,reusable,expires_at) VALUES(?,?,1,NULL)':'INSERT INTO invitations(principal_id,token_hash,reusable,expires_at) VALUES(?,?,0,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY))',[$principalId,hash('sha256',$token)]);
+    return config()['APP_ORIGIN'].rtrim(config()['APP_BASE'],'/').'/#invite='.$token;
 }
 function publicUser(array $u): array {return ['id'=>(int)$u['id'],'label'=>$u['label'],'is_admin'=>(bool)$u['is_admin']];}
 function requireUser(): array {$u=sessionUser();if (!$u) reply(401,'กรุณาเปิดลิงก์เชิญที่ยังใช้งานได้');return $u;}
@@ -51,6 +57,12 @@ function requireCsrf(array $u): void {
 }
 function checkOrigin(): void {
     if (isset($_SERVER['HTTP_ORIGIN']) && $_SERVER['HTTP_ORIGIN']!==config()['APP_ORIGIN']) reply(403,'ไม่อนุญาตแหล่งที่มานี้');
+}
+// Behind the production reverse proxy (TRUST_PROXY=1) REMOTE_ADDR is the proxy; the proxy appends the real client as the last X-Forwarded-For entry.
+function clientIp(): string {
+    $forwarded=$_SERVER['HTTP_X_FORWARDED_FOR']??'';
+    if ((config()['TRUST_PROXY']??'0')==='1' && $forwarded!=='') { $parts=explode(',',$forwarded); return trim(end($parts)); }
+    return $_SERVER['REMOTE_ADDR']??'';
 }
 function requireAdmin(array $u): void {if (!$u['is_admin']) reply(403,'ต้องใช้สิทธิ์ผู้ดูแล');}
 function roleFor(array $u,int $project): string {

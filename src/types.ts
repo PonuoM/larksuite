@@ -43,17 +43,25 @@ export type TaskEvent = {
   actor: string;
 };
 
-export type AccessRow = {
+export type AccessLink = {
   id: number;
-  label: string;
-  is_admin: number;
-  revoked_at: string | null;
+  reusable: boolean;
   expires_at: string | null;
   consumed_at: string | null;
-  invitation_revoked: string | null;
-  project_id: number | null;
-  role: Role | null;
-  project_name: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  current: boolean;
+};
+
+export type AccessMember = {
+  id: number;
+  label: string;
+  is_admin: boolean;
+  revoked_at: string | null;
+  created_at: string;
+  projects: { project_id: number; project_name: string; role: Role }[];
+  links: AccessLink[];
 };
 
 export type Meeting = { id: number; project_id: number; title: string; meeting_on: string; participants?: string; content?: string; published: boolean; version: number; updated_at: string };

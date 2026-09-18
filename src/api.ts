@@ -11,7 +11,7 @@ export function setCsrf(value: string) { csrf = value; }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = options.method ?? 'GET';
-  const response = await fetch(`/Workboard/api/v1${path}`, {
+  const response = await fetch(`${import.meta.env.BASE_URL}api/v1${path}`, {
     ...options,
     credentials: 'same-origin',
     headers: {

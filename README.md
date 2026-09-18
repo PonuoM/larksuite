@@ -55,5 +55,21 @@ C:/AppServ/www/Workboard — Git แยกจาก CRM_ERP_V4 และยั�
 4. บันทึกเพื่อเก็บในฐานข้อมูล รายงานใหม่เห็นเฉพาะทีม; ติ๊กเผยแพร่หากต้องการให้ผู้ชมโปรเจกต์อ่านได้
 
 การจัดรูปแบบทำในระบบ ไม่ต้องใช้ AI API key การให้ AI ตรวจ Git/FTP ยังอยู่ในแผนระยะถัดไป
-ติดตั้งฐานข้อมูลใหม่ต้องรัน 001_core.sql แล้ว 002_meetings.sql ตามลำดับ
-ทดสอบเพิ่ม: node tests/report-format.mjs และ node tests/presentation.mjs
+ติดตั้งฐานข้อมูลใหม่ต้องรัน 001_core.sql, 002_meetings.sql แล้ว 003_permanent_links.sql ตามลำดับ (ALTER ต้องใช้บัญชีที่มีสิทธิ์ schema ไม่ใช่ workboard_app)
+ทดสอบเพิ่ม: node tests/report-format.mjs, node tests/presentation.mjs และ node tests/calendar-items.mjs
+
+## ลิงก์ถาวร
+
+หน้าการเข้าถึงสร้างลิงก์ได้สองแบบ: ลิงก์ถาวร (ค่าเริ่มต้น ใช้ซ้ำได้ ไม่มีวันหมดอายุ) และลิงก์ใช้ครั้งเดียว 7 วัน ระบบเก็บเฉพาะ hash จึงแสดงลิงก์เต็มได้ครั้งเดียวตอนสร้าง ต้องคัดลอกเก็บไว้เอง
+กด ปิดลิงก์ เพื่อปิดเฉพาะลิงก์นั้น ทุกเครื่องที่เข้าผ่านลิงก์นั้นจะออกจากระบบทันที กด + ลิงก์ถาวรใหม่ เพื่อออกลิงก์ใหม่ให้สมาชิกเดิมโดยสิทธิ์เท่าเดิม ลิงก์ที่ใช้เข้าอยู่ตอนนี้ปิดเองไม่ได้ Session หนึ่งครั้งอยู่ได้ 7 วัน เมื่อหมดให้เปิดลิงก์ถาวรเดิมอีกครั้ง
+การเปิดลิงก์ถูกจำกัด 30 ครั้งต่อ 10 นาทีต่อ IP (รวมการรัน tests/api.mjs)
+
+## Production (VPS)
+
+URL: https://larksuite.prima49.com (ต้องมี DNS A record `larksuite` → 187.77.127.28 ที่ผู้ให้บริการ DNS ของ prima49.com)
+โค้ดบน server: /opt/workboard (ส่งด้วย `git archive` จาก commit ที่ push แล้ว ไม่มี credentials GitHub บน server)
+รันด้วย `docker compose` ใน /opt/workboard/deploy: `workboard-app` (PHP 8.3 + Apache) และ `workboard-db` (MariaDB 10.11 ไม่มีพอร์ตสาธารณะ) ค่าลับอยู่ใน deploy/.env และ deploy/app.env บน server เท่านั้น
+Caddy ของ workspec ส่งต่อ larksuite.prima49.com → workboard-app:80 ผ่าน network edge (block อยู่ใน deploy/Caddyfile.snippet)
+สำรองข้อมูล: /etc/cron.d/workboard-backup รัน deploy/backup.sh ทุกวัน 03:15 เก็บ 14 วันที่ /opt/backups/workboard
+Migration ใหม่หลังจากนี้: รันด้วย root ใน workboard-db (initdb ทำงานเฉพาะตอน volume ว่าง)
+ทดสอบ API กับ server: เปิด tunnel `ssh -L 8095:127.0.0.1:8095 root@187.77.127.28` แล้ว `WORKBOARD_API=http://127.0.0.1:8095/api/v1 WORKBOARD_ORIGIN=https://larksuite.prima49.com WORKBOARD_SQL_SSH=root@187.77.127.28 node tests/api.mjs` (สร้างข้อมูลทดสอบที่ถูก archive/revoke ในฐานจริง)

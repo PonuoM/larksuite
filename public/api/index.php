@@ -12,17 +12,18 @@ try {
  if ($route==='/session' && $method==='GET') {$u=sessionUser();reply(200,'พร้อมใช้งาน',$u?['user'=>publicUser($u),'csrf'=>$u['csrf_token']]:['user'=>null]);}
  if ($route==='/redeem' && $method==='POST') {
     checkOrigin();
-    $bucket=hash('sha256',($_SERVER['REMOTE_ADDR']??'').':'.gmdate('Y-m-d-H').':'.floor((int)gmdate('i')/10));
+    $bucket=hash('sha256',clientIp().':'.gmdate('Y-m-d-H').':'.floor((int)gmdate('i')/10));
     query('INSERT INTO rate_limits(bucket,attempts,expires_at) VALUES(?,1,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 20 MINUTE)) ON DUPLICATE KEY UPDATE attempts=attempts+1',[$bucket]);
     if ((int)query('SELECT attempts FROM rate_limits WHERE bucket=?',[$bucket])->fetchColumn()>30) reply(429,'ลองหลายครั้งเกินไป กรุณารอ 10 นาที');
     $data=body();$token=$data['token']??'';
     if(!is_string($token)||!preg_match('/^[a-f0-9]{64}$/',$token))reply(401,'ลิงก์ไม่ถูกต้องหรือหมดอายุ');
     db()->beginTransaction();
     $invite=query('SELECT i.*,p.revoked_at AS principal_revoked FROM invitations i JOIN principals p ON p.id=i.principal_id WHERE token_hash=? FOR UPDATE',[hash('sha256',$token)])->fetch();
-    if(!$invite||$invite['consumed_at']||$invite['revoked_at']||$invite['principal_revoked']||strtotime($invite['expires_at'])<=time()){db()->rollBack();reply(401,'ลิงก์ถูกใช้แล้ว หมดอายุ หรือถูกยกเลิก กรุณาขอลิงก์ใหม่');}
-    query('UPDATE invitations SET consumed_at=UTC_TIMESTAMP() WHERE id=?',[$invite['id']]);
+    $reusable=$invite&&(int)$invite['reusable']===1;
+    if(!$invite||(!$reusable&&$invite['consumed_at'])||$invite['revoked_at']||$invite['principal_revoked']||($invite['expires_at']!==null&&strtotime($invite['expires_at'])<=time())){db()->rollBack();reply(401,'ลิงก์ถูกใช้แล้ว หมดอายุ หรือถูกปิด กรุณาขอลิงก์ใหม่');}
+    query($reusable?'UPDATE invitations SET last_used_at=UTC_TIMESTAMP() WHERE id=?':'UPDATE invitations SET consumed_at=UTC_TIMESTAMP(),last_used_at=UTC_TIMESTAMP() WHERE id=?',[$invite['id']]);
     $sid=bin2hex(random_bytes(32));$csrf=bin2hex(random_bytes(32));
-    query('INSERT INTO access_sessions(token_hash,principal_id,csrf_token,expires_at) VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY))',[hash('sha256',$sid),$invite['principal_id'],$csrf]);
+    query('INSERT INTO access_sessions(token_hash,principal_id,invitation_id,csrf_token,expires_at) VALUES(?,?,?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY))',[hash('sha256',$sid),$invite['principal_id'],$invite['id'],$csrf]);
     db()->commit();cookieToken($sid,time()+604800);reply(200,'เข้าใช้งานแล้ว');
  }
  $u=requireUser();if ($method!=='GET') requireCsrf($u);
@@ -34,9 +35,28 @@ try {
     reply(200,'โปรเจกต์',$rows);
  }
  if ($route==='/projects'&&$method==='POST') {requireAdmin($u);$d=body();query('INSERT INTO projects(name,description) VALUES(?,?)',[textField($d,'name',120,true),textField($d,'description',2000)]);reply(201,'สร้างโปรเจกต์แล้ว',['id'=>(int)db()->lastInsertId()]);}
- if ($route==='/access'&&$method==='GET') {requireAdmin($u);reply(200,'สิทธิ์การเข้าถึง',query('SELECT p.id,p.label,p.is_admin,p.revoked_at,p.created_at,i.expires_at,i.consumed_at,i.revoked_at AS invitation_revoked,m.project_id,m.role,pr.name AS project_name FROM principals p LEFT JOIN invitations i ON i.principal_id=p.id LEFT JOIN memberships m ON m.principal_id=p.id LEFT JOIN projects pr ON pr.id=m.project_id ORDER BY p.id DESC')->fetchAll());}
+ if ($route==='/access'&&$method==='GET') {
+    requireAdmin($u);$members=[];
+    foreach(query('SELECT id,label,is_admin,revoked_at,created_at FROM principals ORDER BY id DESC')->fetchAll() as $p)$members[(int)$p['id']]=['id'=>(int)$p['id'],'label'=>$p['label'],'is_admin'=>(bool)$p['is_admin'],'revoked_at'=>$p['revoked_at'],'created_at'=>$p['created_at'],'projects'=>[],'links'=>[]];
+    foreach(query('SELECT m.principal_id,m.project_id,m.role,pr.name AS project_name FROM memberships m JOIN projects pr ON pr.id=m.project_id ORDER BY pr.id')->fetchAll() as $m)if(isset($members[(int)$m['principal_id']]))$members[(int)$m['principal_id']]['projects'][]=['project_id'=>(int)$m['project_id'],'project_name'=>$m['project_name'],'role'=>$m['role']];
+    foreach(query('SELECT id,principal_id,reusable,expires_at,consumed_at,last_used_at,revoked_at,created_at FROM invitations ORDER BY id DESC')->fetchAll() as $i)if(isset($members[(int)$i['principal_id']]))$members[(int)$i['principal_id']]['links'][]=['id'=>(int)$i['id'],'reusable'=>(bool)$i['reusable'],'expires_at'=>$i['expires_at'],'consumed_at'=>$i['consumed_at'],'last_used_at'=>$i['last_used_at'],'revoked_at'=>$i['revoked_at'],'created_at'=>$i['created_at'],'current'=>(int)$i['id']===(int)$u['invitation_id']];
+    reply(200,'สิทธิ์การเข้าถึง',array_values($members));
+ }
+ if(preg_match('~^/access/links/(\d+)/close$~',$route,$m)&&$method==='POST') {
+    requireAdmin($u);$id=(int)$m[1];
+    if($id===(int)$u['invitation_id'])reply(422,'ปิดลิงก์ที่คุณใช้เข้าอยู่ตอนนี้ไม่ได้ ให้สร้างลิงก์ใหม่และเข้าผ่านลิงก์ใหม่ก่อน');
+    db()->beginTransaction();
+    if(query('UPDATE invitations SET revoked_at=UTC_TIMESTAMP() WHERE id=? AND revoked_at IS NULL',[$id])->rowCount()!==1){db()->rollBack();reply(404,'ไม่พบลิงก์ที่ยังเปิดอยู่');}
+    query('DELETE FROM access_sessions WHERE invitation_id=?',[$id]);db()->commit();reply(200,'ปิดลิงก์แล้ว เครื่องที่เข้าผ่านลิงก์นี้ออกจากระบบทั้งหมด');
+ }
+ if(preg_match('~^/access/(\d+)/links$~',$route,$m)&&$method==='POST') {
+    requireAdmin($u);$pid=(int)$m[1];$d=body();
+    if(!query('SELECT id FROM principals WHERE id=? AND revoked_at IS NULL',[$pid])->fetch())reply(404,'ไม่พบสมาชิกที่ยังใช้งานได้');
+    $permanent=($d['permanent']??false)===true;
+    reply(201,$permanent?'ลิงก์ถาวร ใช้ซ้ำได้จนกว่าจะปิด':'ลิงก์นี้ใช้ได้หนึ่งครั้ง ภายใน 7 วัน',['id'=>$pid,'link'=>issueLink($pid,$permanent),'permanent'=>$permanent]);
+ }
  if ($route==='/access'&&$method==='POST') {
-    requireAdmin($u);$d=body();$label=textField($d,'label',120,true);$role=$d['role']??'';$project=(int)($d['project_id']??0);
+    requireAdmin($u);$d=body();$label=textField($d,'label',120,true);$role=$d['role']??'';$project=(int)($d['project_id']??0);$permanent=($d['permanent']??false)===true;
     if(!in_array($role,['admin','editor','viewer'],true))reply(422,'สิทธิ์ไม่ถูกต้อง');
     $projects=[];
     if($role!=='admin') {
@@ -47,11 +67,11 @@ try {
           roleFor($u,$id);$projects[$id]=$id;
        }
     }
-    $token=bin2hex(random_bytes(32));db()->beginTransaction();
+    db()->beginTransaction();
     query('INSERT INTO principals(label,is_admin) VALUES(?,?)',[$label,$role==='admin'?1:0]);$pid=(int)db()->lastInsertId();
     foreach($projects as $projectId)query('INSERT INTO memberships(principal_id,project_id,role) VALUES(?,?,?)',[$pid,$projectId,$role]);
-    query('INSERT INTO invitations(principal_id,token_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY))',[$pid,hash('sha256',$token)]);
-    db()->commit();reply(201,'ลิงก์นี้ใช้ได้หนึ่งครั้ง ภายใน 7 วัน',['id'=>$pid,'link'=>config()['APP_ORIGIN'].rtrim(config()['APP_BASE'],'/').'/#invite='.$token]);
+    $link=issueLink($pid,$permanent);
+    db()->commit();reply(201,$permanent?'ลิงก์ถาวร ใช้ซ้ำได้จนกว่าจะปิด':'ลิงก์นี้ใช้ได้หนึ่งครั้ง ภายใน 7 วัน',['id'=>$pid,'link'=>$link,'permanent'=>$permanent]);
  }
  if(preg_match('~^/access/(\d+)/revoke$~',$route,$m)&&$method==='POST') {
     requireAdmin($u);$id=(int)$m[1];if($id===(int)$u['id'])reply(422,'ยกเลิกสิทธิ์ของตัวเองไม่ได้');

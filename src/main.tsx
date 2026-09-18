@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, ApiError, setCsrf } from './api';
-import type { AccessRow, ChecklistItem, Project, SessionUser, Task, TaskEvent } from './types';
+import type { AccessLink, AccessMember, ChecklistItem, Project, SessionUser, Task, TaskEvent } from './types';
 import './index.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
@@ -19,8 +19,16 @@ function formatDate(value: string | null) {
 
 function message(error: unknown) { return error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'; }
 
-function Icon({ children }: { children: React.ReactNode }) {
-  return <span className="icon" aria-hidden="true">{children}</span>;
+const iconPaths = {
+  overview: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></>,
+  board: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></>,
+  report: <><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/></>,
+  calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>,
+  access: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
+};
+
+function Icon({ name }: { name: keyof typeof iconPaths }) {
+  return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{iconPaths[name]}</svg>;
 }
 
 function App() {
@@ -146,11 +154,11 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark small">W</div><strong>Workboard</strong></div>
       <nav aria-label="เมนูหลัก">
-        <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}><Icon>▦</Icon>ภาพรวมโปรเจกต์</button>
-        <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}><Icon>▥</Icon>บอร์ดงาน</button>
-        <button className={view === 'report' ? 'active' : ''} onClick={() => setView('report')}><Icon>≡</Icon>รายงานสัปดาห์</button>
-        <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}><Icon>▦</Icon>ปฏิทิน / ประชุม</button>
-        {session.user.is_admin && <button className={view === 'access' ? 'active' : ''} onClick={() => setView('access')}><Icon>◎</Icon>การเข้าถึง</button>}
+        <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}><Icon name="overview"/>ภาพรวมโปรเจกต์</button>
+        <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}><Icon name="board"/>บอร์ดงาน</button>
+        <button className={view === 'report' ? 'active' : ''} onClick={() => setView('report')}><Icon name="report"/>รายงานสัปดาห์</button>
+        <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}><Icon name="calendar"/>ปฏิทิน / ประชุม</button>
+        {session.user.is_admin && <button className={view === 'access' ? 'active' : ''} onClick={() => setView('access')}><Icon name="access"/>การเข้าถึง</button>}
       </nav>
       <p className="sidebar-label">โปรเจกต์</p>
       <nav className="projects" aria-label="เลือกโปรเจกต์">
@@ -245,44 +253,69 @@ function Checklist({ value, onChange }: { value: ChecklistItem[]; onChange: (v: 
   </section>;
 }
 
+function dateTime(value: string | null) {
+  return value ? new Date(value.replace(' ', 'T') + 'Z').toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+}
+
+function linkState(link: AccessLink) {
+  if (link.revoked_at) return 'ปิดแล้ว ' + dateTime(link.revoked_at);
+  if (link.reusable) return link.last_used_at ? 'ใช้ล่าสุด ' + dateTime(link.last_used_at) : 'ยังไม่เคยใช้';
+  if (link.consumed_at) return 'เปิดใช้แล้ว ' + dateTime(link.consumed_at);
+  if (link.expires_at && new Date(link.expires_at.replace(' ', 'T') + 'Z') < new Date()) return 'หมดอายุ';
+  return 'รอเปิด · หมดอายุ ' + dateTime(link.expires_at);
+}
+
 function AccessManager({ projects }: { projects: Project[] }) {
-  const [rows, setRows] = useState<AccessRow[]>([]);
+  const [members, setMembers] = useState<AccessMember[]>([]);
   const [label, setLabel] = useState('');
   const [role, setRole] = useState('viewer');
+  const [permanent, setPermanent] = useState(true);
   const [projectIds, setProjectIds] = useState<number[]>([]);
   const [allProjects, setAllProjects] = useState(false);
   const [showRevoked, setShowRevoked] = useState(false);
   const [showProjectForm, setShowProjectForm] = useState(false);
-  const [link, setLink] = useState('');
+  const [issued, setIssued] = useState<{ memberId: number; link: string; permanent: boolean } | null>(null);
+  const [closing, setClosing] = useState(0);
+  const [revoking, setRevoking] = useState(0);
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const selectedIds = allProjects ? projects.map((p) => p.id) : projectIds;
-  const members = useMemo(() => {
-    const grouped = new Map<number, { row: AccessRow; names: string[] }>();
-    for (const row of rows) {
-      const item = grouped.get(row.id) ?? { row, names: [] };
-      if (row.project_name && !item.names.includes(row.project_name)) item.names.push(row.project_name);
-      grouped.set(row.id, item);
-    }
-    return [...grouped.values()].filter(({ row }) => showRevoked || !row.revoked_at);
-  }, [rows, showRevoked]);
-  async function load() { try { setRows(await api<AccessRow[]>('/access')); } catch (e) { setError(message(e)); } }
+  const visibleMembers = members.filter((m) => showRevoked || !m.revoked_at);
+  async function load() { try { setMembers(await api<AccessMember[]>('/access')); } catch (e) { setError(message(e)); } }
   useEffect(() => { load(); }, []);
-  async function createLink(e: React.FormEvent) {
-    e.preventDefault(); setBusy(true); setError(''); setLink(''); setCopied(false);
-    try {
-      const data = await api<{ link: string }>('/access', { method: 'POST', body: JSON.stringify({ label, role, project_ids: selectedIds }) });
-      setLink(data.link); setLabel(''); await load();
-    } catch (e) { setError(message(e)); } finally { setBusy(false); }
+  async function run(action: () => Promise<void>) {
+    setBusy(true); setError('');
+    try { await action(); } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
-  async function createProject(e: React.FormEvent) {
-    e.preventDefault(); setBusy(true); setError('');
-    try { await api('/projects', { method: 'POST', body: JSON.stringify({ name: projectName, description }) }); location.reload(); }
-    catch (e) { setError(message(e)); } finally { setBusy(false); }
+  function createLink(e: React.FormEvent) {
+    e.preventDefault(); setIssued(null); setCopied(false);
+    run(async () => {
+      const data = await api<{ link: string; permanent: boolean }>('/access', { method: 'POST', body: JSON.stringify({ label, role, project_ids: selectedIds, permanent }) });
+      setIssued({ memberId: 0, link: data.link, permanent: data.permanent }); setLabel(''); await load();
+    });
   }
+  function newLink(memberId: number) {
+    setIssued(null); setCopied(false);
+    run(async () => {
+      const data = await api<{ link: string; permanent: boolean }>(`/access/${memberId}/links`, { method: 'POST', body: JSON.stringify({ permanent: true }) });
+      setIssued({ memberId, link: data.link, permanent: data.permanent }); await load();
+    });
+  }
+  function closeLink(linkId: number) {
+    run(async () => { await api(`/access/links/${linkId}/close`, { method: 'POST', body: '{}' }); setClosing(0); await load(); });
+  }
+  function createProject(e: React.FormEvent) {
+    e.preventDefault();
+    run(async () => { await api('/projects', { method: 'POST', body: JSON.stringify({ name: projectName, description }) }); location.reload(); });
+  }
+  const issuedLink = (memberId: number) => issued?.memberId === memberId && <div className="generated-link">
+    <p>{issued.permanent ? 'ลิงก์ถาวร ใช้ซ้ำได้ไม่มีวันหมดอายุจนกว่าจะปิด · ลิงก์แสดงครั้งเดียว กรุณาคัดลอกเก็บไว้' : 'ลิงก์ใช้ได้ครั้งเดียวภายใน 7 วัน'}</p>
+    <input aria-label="ลิงก์เชิญที่สร้างแล้ว" readOnly value={issued.link} onFocus={(e) => e.target.select()} />
+    <button onClick={async () => { try { await navigator.clipboard.writeText(issued.link); setCopied(true); } catch { setError('คัดลอกไม่สำเร็จ กรุณาเลือกและคัดลอกลิงก์จากช่อง'); } }}>{copied ? 'คัดลอกแล้ว' : 'คัดลอก'}</button>
+  </div>;
   return <><header className="topbar"><div><h1>การเข้าถึง</h1><span>ลิงก์เชิญและสมาชิก</span></div><div className="topbar-actions"><button className="secondary" onClick={() => setShowProjectForm(!showProjectForm)}>{showProjectForm ? 'ปิดฟอร์ม' : '+ โปรเจกต์'}</button><button className="mobile-action" onClick={() => location.reload()}>กลับบอร์ด</button></div></header>
     <div className="access-content">
       {error && <div className="alert error" role="alert">{error}</div>}
@@ -291,18 +324,34 @@ function AccessManager({ projects }: { projects: Project[] }) {
           <Field label="ชื่อผู้รับ"><input required value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ชื่อสมาชิกหรือทีม" /></Field>
           <Field label="สิทธิ์"><select value={role} onChange={(e) => setRole(e.target.value)}><option value="viewer">ดูอย่างเดียว</option><option value="editor">แก้ไขงาน</option><option value="admin">ผู้ดูแล</option></select></Field>
           <button className="primary" disabled={busy || (role !== 'admin' && selectedIds.length === 0)}>{busy ? 'กำลังสร้าง…' : 'สร้างลิงก์'}</button>
+          <label className="project-choice link-kind"><input type="checkbox" checked={permanent} onChange={(e) => setPermanent(e.target.checked)} /> ลิงก์ถาวร — ใช้ซ้ำได้ ไม่มีวันหมดอายุ จนกว่าจะกดปิด</label>
           {role !== 'admin' ? <fieldset className="project-picker"><legend>โปรเจกต์ที่เข้าถึงได้ · {selectedIds.length} โปรเจกต์</legend>
             <label className="project-choice"><input type="checkbox" checked={allProjects} onChange={(e) => { setAllProjects(e.target.checked); setProjectIds([]); }} /> ทุกโปรเจกต์ที่มีตอนนี้</label>
             <div className="project-options">{projects.map((p) => <label className="project-choice" key={p.id}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={(e) => { setAllProjects(false); setProjectIds(e.target.checked ? [...selectedIds, p.id] : selectedIds.filter((id) => id !== p.id)); }} />{p.name}</label>)}</div>
             <small>เลือกได้หลายโปรเจกต์ · โปรเจกต์ที่สร้างภายหลังต้องให้สิทธิ์เพิ่ม</small>
           </fieldset> : <p className="access-hint">ผู้ดูแลจัดการทุกโปรเจกต์และสิทธิ์สมาชิกได้</p>}
         </form>
-        {link && <div className="generated-link"><p>ลิงก์ใช้ได้ครั้งเดียวภายใน 7 วัน</p><input aria-label="ลิงก์เชิญที่สร้างแล้ว" readOnly value={link} /><button onClick={async () => { try { await navigator.clipboard.writeText(link); setCopied(true); } catch { setError('คัดลอกไม่สำเร็จ กรุณาเลือกและคัดลอกลิงก์จากช่อง'); } }}>{copied ? 'คัดลอกแล้ว' : 'คัดลอก'}</button></div>}
+        {issuedLink(0)}
       </section>
       {showProjectForm && <section className="panel"><h2>สร้างโปรเจกต์</h2><form onSubmit={createProject} className="access-form"><Field label="ชื่อโปรเจกต์"><input required value={projectName} onChange={(e) => setProjectName(e.target.value)} /></Field><Field label="คำอธิบาย"><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field><button className="primary" disabled={busy}>สร้างโปรเจกต์</button></form></section>}
-      <section className="panel"><div className="member-heading"><h2>ลิงก์และสมาชิก <small>{members.length}</small></h2><label><input type="checkbox" checked={showRevoked} onChange={(e) => setShowRevoked(e.target.checked)} /> แสดงที่ยกเลิกแล้ว</label></div>
-        <div className="access-table">{members.map(({ row, names }) => <div key={row.id}><strong>{row.label}</strong><span>{row.is_admin ? 'ผู้ดูแล · ทุกโปรเจกต์' : names.join(', ') + ' · ' + (row.role === 'editor' ? 'แก้ไข' : 'ดู')}</span><small>{row.revoked_at ? 'ยกเลิกแล้ว' : row.consumed_at ? 'เปิดใช้งานแล้ว' : row.invitation_revoked ? 'ลิงก์ยกเลิกแล้ว' : row.expires_at && new Date(row.expires_at.replace(' ', 'T') + 'Z') < new Date() ? 'ลิงก์หมดอายุ' : 'รอเปิดลิงก์'}</small>{!row.revoked_at && <button onClick={async () => { try { await api('/access/' + row.id + '/revoke', { method: 'POST', body: '{}' }); await load(); } catch (e) { setError(message(e)); } }}>ยกเลิก</button>}</div>)}</div>
-        {!members.length && <p className="access-hint">ยังไม่มีสมาชิกในรายการนี้</p>}
+      <section className="panel"><div className="member-heading"><h2>ลิงก์และสมาชิก <small>{visibleMembers.length}</small></h2><label><input type="checkbox" checked={showRevoked} onChange={(e) => setShowRevoked(e.target.checked)} /> แสดงที่ยกเลิก/ปิดแล้ว</label></div>
+        <div className="member-list">{visibleMembers.map((member) => {
+          const links = member.links.filter((l) => showRevoked || !l.revoked_at);
+          return <article key={member.id} className={member.revoked_at ? 'member revoked' : 'member'}>
+            <header><div><strong>{member.label}</strong><span>{member.is_admin ? 'ผู้ดูแล · ทุกโปรเจกต์' : member.projects.map((p) => p.project_name).join(', ') + ' · ' + (member.projects[0]?.role === 'editor' ? 'แก้ไข' : 'ดู')}</span></div>
+              {member.revoked_at ? <small>ยกเลิกสมาชิกแล้ว</small> : <div className="member-actions"><button className="secondary" disabled={busy} onClick={() => newLink(member.id)}>+ ลิงก์ถาวรใหม่</button>{revoking === member.id ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => run(async () => { await api('/access/' + member.id + '/revoke', { method: 'POST', body: '{}' }); setRevoking(0); await load(); })}>ยืนยันยกเลิกสมาชิก</button><button className="text-action" onClick={() => setRevoking(0)}>ไม่ยกเลิก</button></span> : <button className="danger-text" onClick={() => setRevoking(member.id)}>ยกเลิกสมาชิก</button>}</div>}
+            </header>
+            {links.length > 0 && <ul className="link-list">{links.map((link) => <li key={link.id} className={link.revoked_at ? 'closed' : ''}>
+              <span className="link-kind-badge">{link.reusable ? 'ลิงก์ถาวร' : 'ใช้ครั้งเดียว'}</span>
+              <small>{linkState(link)}{link.current && ' · ลิงก์ที่คุณใช้อยู่'}</small>
+              {!link.revoked_at && !link.current && !member.revoked_at && (link.reusable || !link.consumed_at) && (closing === link.id
+                ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => closeLink(link.id)}>ยืนยันปิด</button><button className="text-action" onClick={() => setClosing(0)}>ไม่ปิด</button></span>
+                : <button className="danger-text" onClick={() => setClosing(link.id)}>ปิดลิงก์</button>)}
+            </li>)}</ul>}
+            {issuedLink(member.id)}
+          </article>;
+        })}</div>
+        {!visibleMembers.length && <p className="access-hint">ยังไม่มีสมาชิกในรายการนี้</p>}
       </section>
     </div></>;
 }

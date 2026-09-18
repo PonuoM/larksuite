@@ -2,29 +2,211 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import type { Meeting, Project, Task } from './types';
 import FormattedReport from './FormattedReport';
-import { today, dateLabel, localDate } from './ProjectViews';
+import { today, dateLabel } from './ProjectViews';
+import { calendarItems, monthsBetween, shiftDay, weekOf, weekRows, type CalendarFilters, type CalendarItem } from './calendar-items';
 const template='# สรุปการประชุม\n\n## ประเด็นที่หารือ\n- \n\n## ข้อตกลง / มติ\n- \n\n## งานที่ต้องติดตาม\n| งาน | ผู้รับผิดชอบ | กำหนดส่ง |\n| --- | --- | --- |\n|  |  |  |\n\n## ประเด็นค้าง\n- ';
-export default function MeetingCalendar({projects,tasks,projectId,onProject,onTask}:{projects:Project[];tasks:Task[];projectId:number|null;onProject:(id:number)=>void;onTask:(t:Task)=>void}) {
- const [month,setMonth]=useState(today().slice(0,7));const [day,setDay]=useState(today());
- const [meetings,setMeetings]=useState<Meeting[]>([]);const [selected,setSelected]=useState<Meeting|null>(null);
- const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [revision,setRevision]=useState(0);
- const scoped=useMemo(()=>projects.filter(p=>!projectId||p.id===projectId),[projects,projectId]);
- const writable=scoped.filter(p=>p.role!=='viewer');
- useEffect(()=>{let cancelled=false;setLoading(true);setError('');setMeetings([]);
-  Promise.all(scoped.map(async p=>{const rows:Meeting[]=[];let cursor:number|null=null;do{const data: {items:Meeting[];next_cursor:number|null}=await api('/projects/'+p.id+'/meetings?month='+month+(cursor?'&cursor='+cursor:''));rows.push(...data.items);cursor=data.next_cursor;}while(cursor);return rows;})).then(rows=>{if(!cancelled)setMeetings(rows.flat());}).catch(e=>{if(!cancelled)setError(e.message);}).finally(()=>{if(!cancelled)setLoading(false);});return()=>{cancelled=true;};
- },[month,scoped,revision]);
- const first=new Date(month+'-01T12:00:00');const offset=(first.getDay()+6)%7;const total=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
- const cells=Array.from({length:Math.ceil((offset+total)/7)*7},(_,i)=>{const d=new Date(first);d.setDate(1+i-offset);return localDate(d);});
- const dayMeetings=meetings.filter(m=>m.meeting_on===day);
- const dayTasks=tasks.filter(t=>(!projectId||t.project_id===projectId)&&t.planned_go_live_on===day);
- function navigateMonth(delta:number){const d=new Date(month+'-01T12:00:00');d.setMonth(d.getMonth()+delta);const value=localDate(d);setMonth(value.slice(0,7));setDay(value);}
- function create(){const p=writable[0];if(p)setSelected({id:0,project_id:p.id,title:'',meeting_on:day,participants:'',content:'',published:false,version:0,updated_at:''});}
- return <><div className="toolbar"><select aria-label="โปรเจกต์ในปฏิทิน" value={projectId??0} onChange={e=>onProject(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><button className="secondary" aria-label="เดือนก่อน" onClick={()=>navigateMonth(-1)}>‹</button><strong className="month-label">{first.toLocaleDateString('th-TH',{month:'long',year:'numeric'})}</strong><button className="secondary" aria-label="เดือนถัดไป" onClick={()=>navigateMonth(1)}>›</button><button className="secondary" onClick={()=>{setMonth(today().slice(0,7));setDay(today());}}>วันนี้</button>{writable.length>0&&<button className="primary toolbar-end" onClick={create}>+ บันทึกประชุม</button>}</div>
- <div className="calendar-content">{error&&<div className="alert error" role="alert">{error}</div>}<div className="calendar-layout"><section className="calendar-panel" aria-label="ปฏิทินรายเดือน"><div className="calendar-weekdays">{['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'].map(d=><span key={d}>{d}</span>)}</div><div className="calendar-grid">{cells.map(date=>{const ms=meetings.filter(m=>m.meeting_on===date);const ts=tasks.filter(t=>(!projectId||t.project_id===projectId)&&t.planned_go_live_on===date);return <button key={date} aria-label={dateLabel(date)+' ประชุม '+ms.length+' งาน '+ts.length} aria-pressed={day===date} className={'calendar-day '+(date.slice(0,7)!==month?'outside ':'')+(day===date?'selected ':'')+(date===today()?'today':'')} onClick={()=>{setDay(date);if(date.slice(0,7)!==month)setMonth(date.slice(0,7));}}><span className="day-number">{Number(date.slice(8))}</span>{ms.slice(0,2).map(m=><span className="calendar-event" key={m.id}>{m.title}</span>)}{ms.length>2&&<small>+{ms.length-2} ประชุม</small>}{ts.length>0&&<small className="calendar-deadline">◷ {ts.length} งานเริ่มใช้</small>}</button>})}</div><p className="calendar-legend">{loading?'กำลังโหลดรายงาน…':'ประชุมตามวันที่ · งานตามกำหนดเริ่มใช้งาน'}</p></section>
- <aside className="day-agenda"><header><small>บันทึกประจำวัน</small><h2>{dateLabel(day)}</h2></header><h3>รายงานประชุม <small>{dayMeetings.length}</small></h3>{dayMeetings.map(m=><button className="agenda-meeting" key={m.id} onClick={()=>setSelected(m)}><small>{projects.find(p=>p.id===m.project_id)?.name}</small><strong>{m.title}</strong><span>{m.published?'เผยแพร่ให้ผู้ชม':'เฉพาะทีม'} ↗</span></button>)}{!dayMeetings.length&&<p className="muted">{loading?'กำลังโหลด…':'ยังไม่มีรายงานประชุมในวันนี้'}</p>}{writable.length>0&&<button className="text-action" onClick={create}>+ เพิ่มรายงานวันนี้</button>}<h3>กำหนดเริ่มใช้งาน <small>{dayTasks.length}</small></h3>{dayTasks.map(t=><button className="report-task" key={t.id} onClick={()=>onTask(t)}><span>—</span><span>{t.title}<small>{projects.find(p=>p.id===t.project_id)?.name}</small></span></button>)}{!dayTasks.length&&<p className="muted">ไม่มีงานครบกำหนดวันนี้</p>}</aside></div></div>
- {selected&&<MeetingDrawer key={selected.id+'-'+selected.meeting_on} initial={selected} projects={projects} onClose={()=>setSelected(null)} onSaved={m=>{setSelected(m);setDay(m.meeting_on);setMonth(m.meeting_on.slice(0,7));setRevision(v=>v+1);}} onArchived={()=>{setSelected(null);setRevision(v=>v+1);}}/>}
- </>;
+
+// Calendar layout follows the WorkAlljob/Lark concept (side panel + month/week grid) in Workboard's own palette.
+type Item = CalendarItem<Task, Meeting>;
+const DOW = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+const PROJECT_COLORS = ['#a9361f', '#17654d', '#3b5b92', '#b7791f', '#7a4a8c', '#2f7f86', '#8a5a3c', '#5d6b2f'];
+const FILTER_KEY = 'workboard-calendar-filters';
+const DATE_ROW = 28;
+const LANE = 21;
+
+function loadFilters(): CalendarFilters {
+  const fallback = { meetings: true, pending: true, released: true, hiddenProjects: [] };
+  try { return { ...fallback, ...JSON.parse(localStorage.getItem(FILTER_KEY) || '{}') }; } catch { return fallback; }
 }
+function monthLabel(day: string) { return new Date(day + 'T12:00:00').toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }); }
+function shortLabel(day: string) { return new Date(day + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); }
+
+export default function MeetingCalendar({ projects, tasks, projectId, onProject, onTask }: { projects: Project[]; tasks: Task[]; projectId: number | null; onProject: (id: number) => void; onTask: (t: Task) => void }) {
+  const [view, setView] = useState<'month' | 'week'>('month');
+  const [day, setDay] = useState(today());
+  const [filters, setFilters] = useState<CalendarFilters>(loadFilters);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [selected, setSelected] = useState<Meeting | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const scoped = useMemo(() => projects.filter((p) => !projectId || p.id === projectId), [projects, projectId]);
+  const writable = scoped.filter((p) => p.role !== 'viewer');
+  const color = (id: number) => PROJECT_COLORS[Math.max(0, projects.findIndex((p) => p.id === id)) % PROJECT_COLORS.length];
+  const rows = useMemo(() => view === 'month' ? weekRows(day.slice(0, 7)) : [weekOf(day)], [view, day]);
+  const first = rows[0][0], last = rows[rows.length - 1][6];
+  const months = monthsBetween(first, last).join(',');
+
+  useEffect(() => { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* storage unavailable: keep in memory */ } }, [filters]);
+  // Load every month the grid shows, so leading/trailing days of neighbouring months also show their meetings.
+  useEffect(() => {
+    let cancelled = false; setLoading(true); setError('');
+    Promise.all(scoped.flatMap((p) => months.split(',').map(async (month) => {
+      const items: Meeting[] = []; let cursor: number | null = null;
+      do { const data: { items: Meeting[]; next_cursor: number | null } = await api('/projects/' + p.id + '/meetings?month=' + month + (cursor ? '&cursor=' + cursor : '')); items.push(...data.items); cursor = data.next_cursor; } while (cursor);
+      return items;
+    }))).then((r) => { if (!cancelled) setMeetings(r.flat()); }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [months, scoped, revision]);
+
+  const scopedTasks = useMemo(() => tasks.filter((t) => !projectId || t.project_id === projectId), [tasks, projectId]);
+  const byDay = useMemo(() => calendarItems(scopedTasks, meetings, filters, today()), [scopedTasks, meetings, filters]);
+  const dayItems = byDay.get(day) ?? [];
+
+  function move(delta: number) {
+    if (view === 'week') { setDay(shiftDay(day, delta * 7)); return; }
+    const d = new Date(day.slice(0, 7) + '-01T12:00:00'); d.setMonth(d.getMonth() + delta);
+    setDay(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01');
+  }
+  function create(on = day) {
+    const p = writable.find((w) => !filters.hiddenProjects.includes(w.id)) ?? writable[0];
+    if (p) setSelected({ id: 0, project_id: p.id, title: '', meeting_on: on, participants: '', content: '', published: false, version: 0, updated_at: '' });
+  }
+  function open(item: Item) { if (item.meeting) setSelected(item.meeting); else if (item.task) onTask(item.task); }
+  const toggle = (key: 'meetings' | 'pending' | 'released') => setFilters((f) => ({ ...f, [key]: !f[key] }));
+  const toggleProject = (id: number) => setFilters((f) => ({ ...f, hiddenProjects: f.hiddenProjects.includes(id) ? f.hiddenProjects.filter((x) => x !== id) : [...f.hiddenProjects, id] }));
+  const title = view === 'month' ? monthLabel(day) : shortLabel(first) + ' – ' + dateLabel(last);
+  const agenda = <DayAgenda day={day} items={dayItems} loading={loading} color={color} projects={projects} onOpen={open} canCreate={writable.length > 0} onCreate={() => create()} />;
+
+  return <div className="wcal">
+    {sheetOpen && <div className="wcal-backdrop" onClick={() => setSheetOpen(false)} />}
+    <aside className={'wcal-side' + (sheetOpen ? ' open' : '')} aria-label="ตัวกรองปฏิทิน">
+      <MiniMonth selected={day} onPick={(d) => { setDay(d); setSheetOpen(false); }} marked={byDay} />
+      <div className="wcal-side-agenda">{agenda}</div>
+      <section className="wcal-filter"><h3>แสดง</h3>
+        <FilterRow on={filters.meetings} onToggle={() => toggle('meetings')} mark="dot">รายงานประชุม</FilterRow>
+        <FilterRow on={filters.pending} onToggle={() => toggle('pending')} mark="ring">งานรอเริ่มใช้</FilterRow>
+        <FilterRow on={filters.released} onToggle={() => toggle('released')} mark="check">งานเปิดใช้แล้ว</FilterRow>
+      </section>
+      <section className="wcal-filter"><h3>โปรเจกต์</h3>
+        {scoped.map((p) => <FilterRow key={p.id} on={!filters.hiddenProjects.includes(p.id)} onToggle={() => toggleProject(p.id)} color={color(p.id)}>{p.name}</FilterRow>)}
+        {projectId ? <button className="text-action" onClick={() => onProject(0)}>ดูทุกโปรเจกต์</button> : null}
+      </section>
+    </aside>
+    <section className="wcal-main">
+      <header className="wcal-head">
+        <button className="secondary wcal-sheet-btn" onClick={() => setSheetOpen(true)}>ตัวกรอง</button>
+        <div className="wcal-nav">
+          <button className="secondary" aria-label={view === 'month' ? 'เดือนก่อน' : 'สัปดาห์ก่อน'} onClick={() => move(-1)}>‹</button>
+          <button className="secondary" onClick={() => setDay(today())}>วันนี้</button>
+          <button className="secondary" aria-label={view === 'month' ? 'เดือนถัดไป' : 'สัปดาห์ถัดไป'} onClick={() => move(1)}>›</button>
+        </div>
+        <h2 className="wcal-title">{title}</h2>
+        {loading && <small className="wcal-loading">กำลังโหลด…</small>}
+        <div className="wcal-views" role="group" aria-label="มุมมองปฏิทิน">
+          <button className={view === 'month' ? 'on' : ''} aria-pressed={view === 'month'} onClick={() => setView('month')}>เดือน</button>
+          <button className={view === 'week' ? 'on' : ''} aria-pressed={view === 'week'} onClick={() => setView('week')}>สัปดาห์</button>
+        </div>
+        {writable.length > 0 && <button className="primary" onClick={() => create()}>+ บันทึกประชุม</button>}
+      </header>
+      {error && <div className="alert error wcal-error" role="alert">{error}</div>}
+      {view === 'month'
+        ? <MonthGrid rows={rows} month={day.slice(0, 7)} selected={day} byDay={byDay} color={color} onSelect={setDay} onOpen={open} />
+        : <WeekGrid days={rows[0]} selected={day} byDay={byDay} color={color} projects={projects} onSelect={setDay} onOpen={open} />}
+      <div className="wcal-below-agenda">{agenda}</div>
+    </section>
+    {selected && <MeetingDrawer key={selected.id + '-' + selected.meeting_on} initial={selected} projects={projects} onClose={() => setSelected(null)} onSaved={(m) => { setSelected(m); setDay(m.meeting_on); setRevision((v) => v + 1); }} onArchived={() => { setSelected(null); setRevision((v) => v + 1); }} />}
+  </div>;
+}
+
+function FilterRow({ on, onToggle, color, mark, children }: { on: boolean; onToggle: () => void; color?: string; mark?: 'dot' | 'ring' | 'check'; children: React.ReactNode }) {
+  return <label className="wcal-filter-row">
+    <input type="checkbox" checked={on} onChange={onToggle} style={color ? { accentColor: color } : undefined} />
+    {mark && <span className={'wcal-mark ' + mark} aria-hidden="true">{mark === 'check' ? '✓' : ''}</span>}
+    {color && <span className="wcal-swatch" style={{ background: color }} aria-hidden="true" />}
+    <span className="truncate">{children}</span>
+  </label>;
+}
+
+function Chip({ item, color, onOpen, full }: { item: Item; color: string; onOpen: (i: Item) => void; full?: boolean }) {
+  const kind = item.kind === 'meeting' ? 'ประชุม' : item.kind === 'released' ? 'เปิดใช้แล้ว' : item.overdue ? 'เลยกำหนดเริ่มใช้' : 'กำหนดเริ่มใช้';
+  return <button type="button" className={'wcal-chip ' + item.kind + (item.overdue ? ' overdue' : '') + (full ? ' full' : '')} title={kind + ': ' + item.title} aria-label={kind + ': ' + item.title}
+    onClick={(e) => { e.stopPropagation(); onOpen(item); }} style={{ ['--chip' as string]: color }}>
+    <span className="wcal-dot" aria-hidden="true">{item.kind === 'released' ? '✓' : ''}</span><span className="wcal-text">{item.title}</span>
+  </button>;
+}
+
+function MonthGrid({ rows, month, selected, byDay, color, onSelect, onOpen }: { rows: string[][]; month: string; selected: string; byDay: Map<string, Item[]>; color: (id: number) => string; onSelect: (d: string) => void; onOpen: (i: Item) => void }) {
+  const grid = useRef<HTMLDivElement>(null);
+  const [capacity, setCapacity] = useState(3);
+  const [openWeek, setOpenWeek] = useState(-1);
+  useEffect(() => { setOpenWeek(-1); }, [month]);
+  // How many items fit in a day cell depends on the real window height (dots only on narrow screens).
+  useEffect(() => {
+    const el = grid.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const calc = () => setCapacity(el.clientWidth < 520 ? 99 : Math.max(1, Math.min(8, Math.floor((el.clientHeight / 6 - DATE_ROW) / LANE))));
+    calc(); const ro = new ResizeObserver(calc); ro.observe(el); return () => ro.disconnect();
+  }, []);
+  const now = today();
+  return <section className="wcal-month" aria-label="ปฏิทินรายเดือน">
+    <div className="wcal-dow">{DOW.map((d) => <span key={d}>{d}</span>)}</div>
+    <div className="wcal-grid" ref={grid}>
+      {rows.map((week, w) => {
+        const open = openWeek === w;
+        return <div key={week[0]} className={'wcal-week' + (open ? ' open' : '')}>
+          {week.map((date) => {
+            const items = byDay.get(date) ?? [];
+            const shown = open || items.length <= capacity ? items : items.slice(0, capacity - 1);
+            const more = items.length - shown.length;
+            return <div key={date} className={'wcal-cell' + (date.slice(0, 7) !== month ? ' out' : '') + (date === selected ? ' selected' : '') + (date === now ? ' today' : '')} onClick={() => onSelect(date)}>
+              <button type="button" className="wcal-date" aria-pressed={date === selected} aria-label={dateLabel(date) + ' · ' + items.length + ' รายการ'} onClick={(e) => { e.stopPropagation(); onSelect(date); }}>{Number(date.slice(8))}</button>
+              <div className="wcal-items">
+                {shown.map((item) => <Chip key={item.key} item={item} color={color(item.project_id)} onOpen={onOpen} />)}
+                {more > 0 && <button type="button" className="wcal-more" onClick={(e) => { e.stopPropagation(); setOpenWeek(w); }}>+{more} เพิ่มเติม</button>}
+              </div>
+            </div>;
+          })}
+          {open && <button type="button" className="wcal-collapse" onClick={() => setOpenWeek(-1)}>ย่อสัปดาห์นี้</button>}
+        </div>;
+      })}
+    </div>
+  </section>;
+}
+
+function WeekGrid({ days, selected, byDay, color, projects, onSelect, onOpen }: { days: string[]; selected: string; byDay: Map<string, Item[]>; color: (id: number) => string; projects: Project[]; onSelect: (d: string) => void; onOpen: (i: Item) => void }) {
+  const now = today();
+  return <section className="wcal-weekview" aria-label="ปฏิทินรายสัปดาห์">
+    {days.map((date, i) => {
+      const items = byDay.get(date) ?? [];
+      return <div key={date} className={'wcal-daycol' + (date === selected ? ' selected' : '') + (date === now ? ' today' : '')} onClick={() => onSelect(date)}>
+        <button type="button" className="wcal-dayhead" aria-pressed={date === selected} onClick={(e) => { e.stopPropagation(); onSelect(date); }}><span>{DOW[i]}</span><strong>{Number(date.slice(8))}</strong></button>
+        <div className="wcal-daycol-items">
+          {items.map((item) => <div key={item.key} className="wcal-week-item"><Chip item={item} color={color(item.project_id)} onOpen={onOpen} full /><small>{projects.find((p) => p.id === item.project_id)?.name}</small></div>)}
+          {!items.length && <p className="wcal-empty">—</p>}
+        </div>
+      </div>;
+    })}
+  </section>;
+}
+
+function DayAgenda({ day, items, loading, color, projects, onOpen, canCreate, onCreate }: { day: string; items: Item[]; loading: boolean; color: (id: number) => string; projects: Project[]; onOpen: (i: Item) => void; canCreate: boolean; onCreate: () => void }) {
+  return <section className="wcal-agenda" aria-label="รายการของวันที่เลือก">
+    <header><small>วันที่เลือก</small><h3>{dateLabel(day)}</h3></header>
+    {items.map((item) => <button key={item.key} type="button" className={'wcal-agenda-item ' + item.kind + (item.overdue ? ' overdue' : '')} onClick={() => onOpen(item)} style={{ ['--chip' as string]: color(item.project_id) }}>
+      <span className="wcal-dot" aria-hidden="true">{item.kind === 'released' ? '✓' : ''}</span>
+      <span><strong>{item.title}</strong><small>{projects.find((p) => p.id === item.project_id)?.name} · {item.kind === 'meeting' ? (item.meeting?.published ? 'ประชุม · เผยแพร่ให้ผู้ชม' : 'ประชุม · เฉพาะทีม') : item.kind === 'released' ? 'เปิดใช้งานแล้ว' : item.overdue ? 'เลยกำหนดเริ่มใช้' : 'กำหนดเริ่มใช้'}</small></span>
+    </button>)}
+    {!items.length && <p className="muted">{loading ? 'กำลังโหลด…' : 'ไม่มีประชุมหรืองานในวันนี้'}</p>}
+    {canCreate && <button className="text-action" onClick={onCreate}>+ บันทึกประชุมวันนี้</button>}
+  </section>;
+}
+
+function MiniMonth({ selected, onPick, marked }: { selected: string; onPick: (d: string) => void; marked: Map<string, Item[]> }) {
+  const [month, setMonth] = useState(selected.slice(0, 7));
+  useEffect(() => { setMonth(selected.slice(0, 7)); }, [selected]);
+  const cells = weekRows(month).flat();
+  const now = today();
+  const step = (delta: number) => { const d = new Date(month + '-01T12:00:00'); d.setMonth(d.getMonth() + delta); setMonth(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); };
+  return <section className="wcal-mini" aria-label="เลือกวันที่">
+    <header><strong>{monthLabel(month + '-01')}</strong><span><button type="button" aria-label="เดือนก่อน" onClick={() => step(-1)}>‹</button><button type="button" aria-label="เดือนถัดไป" onClick={() => step(1)}>›</button></span></header>
+    <div className="wcal-mini-grid">
+      {DOW.map((d) => <span key={d} className="wcal-mini-dow">{d}</span>)}
+      {cells.map((d) => <button type="button" key={d} className={'wcal-mini-day' + (d.slice(0, 7) !== month ? ' out' : '') + (d === now ? ' today' : '') + (d === selected ? ' sel' : '') + (marked.has(d) ? ' has' : '')} aria-label={dateLabel(d)} onClick={() => onPick(d)}>{Number(d.slice(8))}</button>)}
+    </div>
+  </section>;
+}
+
 function MeetingDrawer({initial,projects,onClose,onSaved,onArchived}:{initial:Meeting;projects:Project[];onClose:()=>void;onSaved:(m:Meeting)=>void;onArchived:()=>void}) {
  const dialog=useRef<HTMLElement>(null);
  useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>previous?.focus();},[]);

@@ -25,7 +25,7 @@ Work only in C:/AppServ/www/Workboard unless specifically asked. CRM_ERP_V4/docs
 - No native alert/confirm/prompt; use application components.
 - Avoid terminal shell scripts in this Windows environment. Use native filesystem APIs/tools; scripts requiring the application runtime can be accessed through localhost. Existing Node tool orchestration can invoke git as an executable without a shell.
 - Do not spawn subagents unless user explicitly requests delegation.
-- No public deployment or Git remote creation until a target and authorization are established.
+- Deployment target (authorized 2026-09-18): Hostinger VPS srv1851858 (187.77.127.28), stack in /opt/workboard (deploy/), public URL https://larksuite.prima49.com through the shared workspec Caddy. Git remote: https://github.com/PonuoM/larksuite. The VPS also runs ERP, workspec, Jitsi and ASR — never restart or edit their stacks; back up /opt/workspec/Caddyfile before appending and use caddy reload (append in place: the file is a single-file bind mount).
 
 ## Continuity
 

@@ -17,4 +17,7 @@ assert.deepEqual(formatReport('บันทึกทั่วไป\nอีก�
 assert.equal(formatReport('<script>alert(1)</script>')[0].lines[0],'<script>alert(1)</script>');
 assert.equal(formatReport('**งานติดตาม**\n1. งานแรก')[0].kind,'heading');
 assert.equal(formatReport('')[0],undefined);
+const nested=formatReport('- หลัก\n  - ย่อย\n\t- ย่อยแท็บ\n- [ ] ต้องทำ');
+assert.equal(nested.length,1);
+assert.deepEqual(nested[0].lines,['- หลัก','  - ย่อย','  - ย่อยแท็บ','- [ ] ต้องทำ']);
 console.log('Report format: headings, lists, tables, raw text preservation passed');

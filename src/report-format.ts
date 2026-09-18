@@ -14,9 +14,11 @@ export function formatReport(source: string): Block[] {
   if(heading || plainHeading) { blocks.push({kind:'heading',lines:[heading ? heading[1] : line.replace(/[:：]$/, '')]}); continue; }
   if(/^\|?[ :|-]+\|[ :|-]+\|?$/.test(line)) continue;
   const kind: Block['kind'] = /^[-*+]\s+|^\d+[.)]\s+/.test(line) ? 'list' : line.startsWith('>') ? 'quote' : line.includes('|') && (line.startsWith('|') || line.endsWith('|')) ? 'table' : 'paragraph';
+  // List lines keep leading indentation (tab = 2 spaces) so the reader can show nesting.
+  const text = kind === 'list' ? raw.replace(/\t/g, '  ').trimEnd() : line;
   const previous = blocks.at(-1);
-  if(previous?.kind === kind && previous.lines[0] !== '') previous.lines.push(line);
-  else blocks.push({kind,lines:[line]});
+  if(previous?.kind === kind && previous.lines[0] !== '') previous.lines.push(text);
+  else blocks.push({kind,lines:[text]});
  }
  return blocks.filter(b=>b.lines.some(line=>line.trim()));
 }

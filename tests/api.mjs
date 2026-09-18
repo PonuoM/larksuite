@@ -1,4 +1,4 @@
-import { execFile as execFileCallback } from 'node:child_process';
+import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import crypto from 'node:crypto';
@@ -12,14 +12,26 @@ const env = Object.fromEntries(envText.split(/\r?\n/).filter(Boolean).map((line)
 }));
 const mysql = 'C:/AppServ/MySQL/bin/mysql.exe';
 const mysqlArgs = [`-u${env.DB_USER}`, `-p${env.DB_PASSWORD}`, '-hlocalhost', '-N', env.DB_NAME];
-const base = 'http://localhost/Workboard/api/v1';
+// Defaults target local AppServ. For a deployed instance set WORKBOARD_API, WORKBOARD_ORIGIN and
+// WORKBOARD_SQL_SSH (e.g. root@host): fixtures then run through `docker exec workboard-db` over SSH.
+const base = process.env.WORKBOARD_API || 'http://localhost/Workboard/api/v1';
+const origin = process.env.WORKBOARD_ORIGIN || 'http://localhost';
+const sqlSsh = process.env.WORKBOARD_SQL_SSH || '';
 
 async function sql(statement) {
-  return (await execFile(mysql, [...mysqlArgs, '-e', statement], { cwd: root, windowsHide: true })).stdout.trim();
+  if (!sqlSsh) return (await execFile(mysql, [...mysqlArgs, '-e', statement], { cwd: root, windowsHide: true })).stdout.trim();
+  return new Promise((resolve, reject) => {
+    const child = spawn('ssh', ['-o', 'BatchMode=yes', sqlSsh, `docker exec -i workboard-db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -N workboard'`], { windowsHide: true });
+    let out = '', err = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('close', (code) => code === 0 ? resolve(out.trim()) : reject(new Error('remote sql failed: ' + err.trim())));
+    child.stdin.end(statement);
+  });
 }
 
 async function raw(path, options = {}) {
-  return fetch(base + path, { ...options, headers: { Origin: 'http://localhost', ...(options.headers ?? {}) } });
+  return fetch(base + path, { ...options, headers: { Origin: origin, ...(options.headers ?? {}) } });
 }
 
 async function redeem(label, role, projectId) {
@@ -81,6 +93,12 @@ try {
   taskId = created.payload.data.id;
   const version = created.payload.data.version;
 
+  const thaiTitle = 'ก'.repeat(240);
+  const thaiCreated = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: thaiTitle }) });
+  if (thaiCreated.status === 201) await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(thaiCreated.payload.data.id)};`);
+  if (thaiCreated.status !== 201 || thaiCreated.payload.data.title !== thaiTitle) throw new Error(`240-character Thai title rejected: ${thaiCreated.status}`);
+  if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: thaiTitle + 'ก' }) })).status !== 422) throw new Error('241-character title accepted');
+
   const moved = await call(editor, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 1, version }) });
   if (moved.status !== 200 || moved.payload.data.status !== 1 || moved.payload.data.version !== version + 1) throw new Error('move/version failed');
 
@@ -127,6 +145,39 @@ try {
     const invalid = await call(admin, '/access', { method: 'POST', body: JSON.stringify({ label: 'API invalid ' + marker, role: 'viewer', project_ids: ids }) });
     if (![404, 422].includes(invalid.status)) throw new Error('invalid project selection accepted');
   }
+  const redeemToken = async (link) => {
+    const response = await raw('/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URL(link).hash.slice(8) }) });
+    if (response.status !== 200) return { status: response.status };
+    const cookie = response.headers.getSetCookie()[0].split(';')[0];
+    const session = await (await raw('/session', { headers: { Cookie: cookie } })).json();
+    return { status: 200, cookie, csrf: session.data.csrf };
+  };
+  const permanent = await call(admin, '/access', { method: 'POST', body: JSON.stringify({ label: 'API permanent ' + marker, role: 'viewer', project_ids: [projectId], permanent: true }) });
+  if (permanent.status !== 201) throw new Error('permanent link create failed: ' + JSON.stringify(permanent));
+  extraPrincipals.push(permanent.payload.data.id);
+  const firstDevice = await redeemToken(permanent.payload.data.link);
+  const secondDevice = await redeemToken(permanent.payload.data.link);
+  if (firstDevice.status !== 200 || secondDevice.status !== 200) throw new Error('permanent link not reusable');
+  if ((await call(firstDevice, '/projects')).status !== 200 || (await call(secondDevice, '/projects')).status !== 200) throw new Error('permanent sessions invalid');
+  const accessList = (await call(admin, '/access')).payload.data;
+  const permanentMember = accessList.find((m) => m.id === permanent.payload.data.id);
+  const permanentLink = permanentMember?.links?.[0];
+  if (!permanentLink || permanentLink.reusable !== true || permanentLink.expires_at !== null || !permanentLink.last_used_at || permanentLink.consumed_at) throw new Error('permanent link listing incorrect: ' + JSON.stringify(permanentMember));
+  if ((await call(admin, `/access/links/${permanentLink.id}/close`, { method: 'POST', body: '{}' })).status !== 200) throw new Error('close link failed');
+  if ((await call(firstDevice, '/projects')).status !== 401 || (await call(secondDevice, '/projects')).status !== 401) throw new Error('closed link sessions still active');
+  if ((await redeemToken(permanent.payload.data.link)).status !== 401) throw new Error('closed link still redeemable');
+  const replacement = await call(admin, `/access/${permanent.payload.data.id}/links`, { method: 'POST', body: JSON.stringify({ permanent: true }) });
+  if (replacement.status !== 201) throw new Error('replacement link failed: ' + JSON.stringify(replacement));
+  const replacementDevice = await redeemToken(replacement.payload.data.link);
+  if (replacementDevice.status !== 200) throw new Error('replacement link not redeemable');
+  const replacementProjects = (await call(replacementDevice, '/projects')).payload.data.map((p) => Number(p.id));
+  if (JSON.stringify(replacementProjects) !== JSON.stringify([projectId])) throw new Error('replacement link changed project scope');
+  if ((await call(viewer, `/access/links/${permanentLink.id}/close`, { method: 'POST', body: '{}' })).status !== 403) throw new Error('viewer closed a link');
+  const adminLink = Number(await sql(`SELECT id FROM invitations WHERE principal_id=${admin.id} ORDER BY id DESC LIMIT 1;`));
+  if ((await call(admin, `/access/links/${adminLink}/close`, { method: 'POST', body: '{}' })).status !== 422) throw new Error('admin closed the link of the current session');
+  const oneTime = await call(admin, '/access', { method: 'POST', body: JSON.stringify({ label: 'API one-time ' + marker, role: 'viewer', project_ids: [projectId] }) });
+  extraPrincipals.push(oneTime.payload.data.id);
+  if ((await redeemToken(oneTime.payload.data.link)).status !== 200 || (await redeemToken(oneTime.payload.data.link)).status !== 401) throw new Error('default link is not one-time');
   const meetingInput = { title: 'API meeting '+marker, meeting_on:'2026-09-18', participants:'Internal participants', content:'## Summary\n- Agreed scope\n\n## Actions\n| Task | Owner |\n| --- | --- |\n| Review | Team |', published:false };
   const meetingCreated=await call(editor, '/projects/'+projectId+'/meetings', {method:'POST',body:JSON.stringify(meetingInput)});
   if(meetingCreated.status!==201)throw new Error('meeting create failed: '+JSON.stringify(meetingCreated));
@@ -153,7 +204,7 @@ try {
   if(eventCount!==3)throw new Error('meeting audit event count incorrect');
   if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
   if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive'] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive'] }, null, 2));
 } finally {
   if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
   const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');
