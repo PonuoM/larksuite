@@ -309,3 +309,54 @@ button { white-space: nowrap; }button:active { opacity: .8; }
   .wcal-dayhead strong { font-size: 14px; min-width: 26px; height: 26px; }
   .wcal-empty { text-align: left; margin: 4px 0; }
 }
+
+/* Sub-tasks, progress notes, Lark notify (2026-09-18) */
+.subtask-progress { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.subtask-progress .track { flex: 1; height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; }
+.subtask-progress .track > span { display: block; height: 100%; background: var(--good); }
+.subtask-progress small { width: 70px; text-align: right; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.checklist .subtask-progress { margin: 4px 0 10px; }
+.subtask { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; border-bottom: 1px solid var(--soft); padding: 5px 0; font-size: 12px; }
+.subtask > label { display: flex; align-items: flex-start; gap: 8px; min-width: 0; line-height: 1.6; }
+.subtask > label input { margin-top: 3px; flex: none; }
+.subtask.done > label span { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.subtask-actions { display: flex; gap: 2px; }
+.subtask-actions button { border: 0; background: transparent; color: var(--muted); font-size: 11px; min-height: 28px; padding: 0 6px; border-radius: 6px; }
+.subtask-actions button:hover { background: var(--soft); color: var(--ink); }
+.subtask-note { grid-column: 1 / -1; margin: 2px 0 2px 24px; color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
+.subtask-note-edit { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin: 4px 0 4px 24px; }
+.subtask-note-edit textarea { font-size: 12px; }
+.checklist > small.muted { display: block; margin-top: 8px; font-size: 10px; }
+.field-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.drawer-actions { flex-wrap: wrap; align-items: center; }
+.drawer-actions .danger-text { margin-right: auto; }
+.notify-picker { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-right: auto; }
+.drawer-actions .danger-text + .notify-picker { margin-right: auto; }
+.drawer-actions .danger-text:has(+ .notify-picker) { margin-right: 0; }
+.notify-picker select { font-size: 12px; padding: 5px 8px; }
+.drawer-actions .notify-text { flex: 1 1 100%; order: 1; font-size: 12px; }
+.drawer-actions .notify-text ~ button { order: 2; }
+button.danger { border: 1px solid var(--danger); background: var(--danger); color: #fff; border-radius: 7px; padding: 8px 12px; }
+.archive-confirm { border-radius: 8px; margin: 12px 0; }
+.archive-confirm p { margin: 0 0 10px; font-size: 12px; }
+.viewer-summary dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 12px; margin: 0 0 14px; }
+.viewer-summary dt { color: var(--muted); }
+.viewer-summary dd { margin: 0; }
+.viewer-summary > p { font-size: 13px; line-height: 1.8; white-space: pre-wrap; }
+.note-composer { display: grid; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.note-composer textarea { font-size: 13px; line-height: 1.7; }
+.note-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.history-list article.note { background: var(--tint); border-radius: 8px; padding: 10px 12px; border-bottom: 0; margin: 8px 0; }
+.history-body { color: var(--ink) !important; font-size: 12px !important; line-height: 1.7; white-space: pre-wrap; margin: 4px 0; }
+.report-sub { font-style: normal; color: var(--muted); font-size: 11px; margin-left: 4px; }
+.project-counts { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10px; color: var(--muted); }
+.project-counts b { color: var(--ink); font-weight: 500; margin-left: 3px; }
+.report-waiting { font-size: 11px; margin-top: 10px; }
+.link-list li .generated-link { flex-basis: 100%; }
+.checklist .subtask-progress small { display: none; }
+.link-list li > button.text-action { margin-left: 0; }
+.link-list li > button.text-action ~ button, .link-list li > button.text-action ~ .confirm-close { margin-left: auto; }
+.link-list li .generated-link { margin: 4px 0 8px; }
+.generated-link button { padding: 0 12px; white-space: nowrap; }
+.add-check button { white-space: nowrap; padding: 0 12px; min-width: 56px; }
+.add-check input { min-width: 0; }

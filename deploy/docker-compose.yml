@@ -19,6 +19,7 @@ services:
       - ../api/migrations/002_meetings.sql:/docker-entrypoint-initdb.d/002_meetings.sql:ro
       - ../api/migrations/003_permanent_links.sql:/docker-entrypoint-initdb.d/003_permanent_links.sql:ro
       - ../api/migrations/004_optional_go_live.sql:/docker-entrypoint-initdb.d/004_optional_go_live.sql:ro
+      - ../api/migrations/005_viewable_links.sql:/docker-entrypoint-initdb.d/005_viewable_links.sql:ro
       - ./initdb/900_app_grants.sql:/docker-entrypoint-initdb.d/900_app_grants.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]

@@ -1,23 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, ApiError, setCsrf } from './api';
-import type { AccessLink, AccessMember, ChecklistItem, Project, SessionUser, Task, TaskEvent } from './types';
+import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task } from './types';
 import './index.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
+import TaskDrawer, { EMPTY_TASK, STATUSES, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
-const STATUSES = ['รอทำ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว'];
-const EMPTY_TASK: Omit<Task, 'id' | 'project_id' | 'updated_at' | 'version' | 'actual_released_at'> = {
-  title: '', feature: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '',
-  blocked_reason: '', checklist: [], status: 0, planned_go_live_on: '', archived: 0,
-};
-
-function formatDate(value: string | null) {
-  if (!value) return '—';
-  return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value.slice(0, 10)}T12:00:00`));
-}
-
-function message(error: unknown) { return error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'; }
+type View = 'board' | 'overview' | 'calendar' | 'access';
+// Everyone lands on the board. Old ?view=report links open the merged overview/report page.
+function initialView(): View { const v = new URLSearchParams(location.search).get('view'); return v === 'overview' || v === 'report' ? 'overview' : v === 'calendar' || v === 'access' ? v : 'board'; }
 
 const iconPaths = {
   overview: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></>,
@@ -37,7 +29,9 @@ function App() {
   const [projectId, setProjectId] = useState<number | null>(0);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<Task | null>(null);
-  const [view, setView] = useState<'overview' | 'board' | 'report' | 'calendar' | 'access'>(() => { const v=new URLSearchParams(location.search).get('view'); return v==='overview'||v==='calendar'||v==='access'||v==='board'?v:'report'; });
+  const [view, setView] = useState<View>(initialView);
+  const [larkTargets, setLarkTargets] = useState<LarkTarget[]>([]);
+  const deepLinked = useRef(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [query, setQuery] = useState('');
   const [feature, setFeature] = useState('');
@@ -87,6 +81,10 @@ function App() {
   useEffect(()=>{let current=true;setLoadingTasks(true);fetchTasks(projects).then(items=>{if(current)setTasks(items);}).catch(e=>{if(current)setError(message(e));}).finally(()=>{if(current)setLoadingTasks(false);});return()=>{current=false;};},[projects]);
   useEffect(()=>{setFeature('');setSelected(null);},[projectId]);
   useEffect(()=>{const url=new URL(location.href);url.searchParams.set('view',view);history.replaceState({},'',url);},[view]);
+  // ?task=ID (links sent to Lark) opens that task once the tasks are loaded; the URL follows the open drawer.
+  useEffect(()=>{if(deepLinked.current||loadingTasks||!tasks.length)return;deepLinked.current=true;const id=Number(new URLSearchParams(location.search).get('task'));const t=tasks.find(x=>x.id===id);if(t){setView('board');setSelected(t);}},[tasks,loadingTasks]);
+  useEffect(()=>{if(!deepLinked.current)return;const url=new URL(location.href);if(selected?.id)url.searchParams.set('task',String(selected.id));else url.searchParams.delete('task');history.replaceState({},'',url);},[selected?.id]);
+  useEffect(()=>{if(projects.some(p=>p.role!=='viewer'))api<LarkTarget[]>('/lark/targets').then(setLarkTargets).catch(()=>setLarkTargets([]));},[projects]);
   const project = projects.find((p) => p.id === projectId) ?? null;
   const writableProjects=projects.filter(p=>p.role!=='viewer');
   const editable = project ? project.role !== 'viewer' : writableProjects.length>0;
@@ -99,19 +97,21 @@ function App() {
     (showDone || task.status !== 4 || (task.actual_released_at ?? '').slice(0, 10) >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
   );
 
-  async function saveTask(draft: Task | typeof EMPTY_TASK) {
+  async function saveTask(draft: Task | typeof EMPTY_TASK, notify: Notify = '', notifyText = '') {
     const targetProject = 'project_id' in draft ? draft.project_id : projectId;
     if (!targetProject) return;
     setBusy(true); setError('');
     try {
-      const payload = { ...EMPTY_TASK, ...draft };
+      const payload = { ...EMPTY_TASK, ...draft, notify: notify || null, notify_text: notifyText };
       const isExisting = 'id' in draft && draft.id > 0;
       const saved = isExisting
         ? await api<Task>(`/tasks/${draft.id}`, { method: 'PATCH', body: JSON.stringify(payload) })
         : await api<Task>(`/projects/${targetProject}/tasks`, { method: 'POST', body: JSON.stringify(payload) });
       setTasks((current) => isExisting ? current.map((t) => t.id === saved.id ? saved : t) : [...current, saved]);
-      setSelected(saved); setNotice('บันทึกแล้ว');
+      setSelected(saved); setNotice(notify ? 'บันทึกและแจ้ง Lark แล้ว' : 'บันทึกแล้ว');
     } catch (e) {
+      // 502 = saved, but Lark did not accept the message: refresh so the drawer shows the saved version.
+      if (e instanceof ApiError && e.status === 502) await loadTasks();
       setError(message(e));
       if (e instanceof ApiError && e.status === 409) await loadTasks();
     } finally { setBusy(false); }
@@ -154,9 +154,8 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark small">W</div><strong>Workboard</strong></div>
       <nav aria-label="เมนูหลัก">
-        <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}><Icon name="overview"/>ภาพรวมโปรเจกต์</button>
         <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}><Icon name="board"/>บอร์ดงาน</button>
-        <button className={view === 'report' ? 'active' : ''} onClick={() => setView('report')}><Icon name="report"/>รายงานสัปดาห์</button>
+        <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}><Icon name="report"/>ภาพรวม / รายงาน</button>
         <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}><Icon name="calendar"/>ปฏิทิน / ประชุม</button>
         {session.user.is_admin && <button className={view === 'access' ? 'active' : ''} onClick={() => setView('access')}><Icon name="access"/>การเข้าถึง</button>}
       </nav>
@@ -171,8 +170,8 @@ function App() {
     </aside>
     <main className="workspace">
       {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} /> : <>
-        <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='report'?'รายงานสัปดาห์':view==='overview'?'ภาพรวมโปรเจกต์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">Kanban</option><option value="overview">ภาพรวม</option><option value="report">รายงานสัปดาห์</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={()=>{const p=project?.role!=='viewer'&&project?project:writableProjects[0];if(p)setSelected({...EMPTY_TASK,id:0,project_id:p.id,version:0,actual_released_at:null,updated_at:''});}}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>
-        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'||view==='report'?<ProjectViews view={view} projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:<>
+        <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={()=>{const p=project?.role!=='viewer'&&project?project:writableProjects[0];if(p)setSelected({...EMPTY_TASK,id:0,project_id:p.id,version:0,actual_released_at:null,updated_at:''});}}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>
+        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:<>
         <div className="toolbar">
           <select aria-label="โปรเจกต์" value={projectId ?? 0} onChange={(e) => setProjectId(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <select aria-label="ฟังก์ชัน" value={feature} onChange={(e) => setFeature(e.target.value)}><option value="">ทุกฟังก์ชัน</option>{features.map((f) => <option key={f}>{f}</option>)}</select>
@@ -181,13 +180,13 @@ function App() {
           <span className="toolbar-count">{visible.length} งาน</span>
         </div>
 
-        {notice && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
         {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : <Board tasks={visible} projects={projects} canEdit={canEdit} onOpen={setSelected} onMove={moveTask} />}
         </>}
       </>}
+      {notice && !error && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {error && <div className="floating-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
     </main>
-    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} busy={busy} onClose={() => setSelected(null)} onSave={saveTask} onError={setError} />}
+    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => setTasks((current) => current.map((t) => t.id === saved.id ? saved : t))} onDeleted={(gone) => { setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
   </div>;
 }
 
@@ -203,6 +202,7 @@ function Board({ tasks, projects, canEdit, onOpen, onMove }: { tasks: Task[]; pr
             <div className="card-top"><small>{projects.find(p=>p.id===task.project_id)?.name} · {task.feature || 'ทั่วไป'}</small>{canEdit(task) && <span className="drag-grip">⠿</span>}</div>
             <h2>{task.title}</h2>
             {task.public_summary&&<p className="card-summary">{task.public_summary}</p>}
+            <ProgressBar list={task.checklist} />
             {task.blocked_reason && <p className="blocked">! {task.blocked_reason}</p>}
             <div className={`deadline ${task.status !== 4 && task.planned_go_live_on && task.planned_go_live_on < new Date().toISOString().slice(0, 10) ? 'overdue' : ''}`}>▣ {task.planned_go_live_on ? `เริ่มใช้ ${formatDate(task.planned_go_live_on)}` : 'ยังไม่กำหนดวันเริ่มใช้'}</div>
             <footer><span>{task.assignee || 'ยังไม่ระบุผู้รับผิดชอบ'}</span><span>#{String(task.id).padStart(3, '0')}</span></footer>
@@ -212,49 +212,6 @@ function Board({ tasks, projects, canEdit, onOpen, onMove }: { tasks: Task[]; pr
       </section>;
     })}
   </div>;
-}
-
-function TaskDrawer({ task, projects, editable, busy, onClose, onSave, onError }: { task: Task; projects:Project[]; editable: boolean; busy: boolean; onClose: () => void; onSave: (t: Task | typeof EMPTY_TASK) => void; onError: (s: string) => void }) {
-  const [draft, setDraft] = useState(task);
-  useEffect(()=>setDraft(task),[task]);
-  const [tab, setTab] = useState<'details' | 'history'>('details');
-  const [events, setEvents] = useState<TaskEvent[]>([]);
-  const isNew = task.id === 0;
-  useEffect(() => { if (tab === 'history' && !isNew) api<TaskEvent[]>(`/tasks/${task.id}/events`).then(setEvents).catch((e) => onError(message(e))); }, [tab]);
-  function field(name: keyof Task, value: string | number | ChecklistItem[]) { setDraft((d) => ({ ...d, [name]: value })); }
-  return <div className="drawer-layer" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-    <aside className="drawer" aria-label="รายละเอียดงาน">
-      <header><div><small>{isNew ? 'งานใหม่' : `#${String(task.id).padStart(3, '0')}`}</small><h1>{draft.title || 'ตั้งชื่องาน'}</h1></div><button className="icon-button" onClick={onClose} aria-label="ปิด">×</button></header>
-      {!isNew && <div className="drawer-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>รายละเอียด</button><button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>ประวัติ</button></div>}
-      {tab === 'history' ? <div className="drawer-body history-list">{events.map((event) => <article key={event.id}><strong>{event.action}</strong><p>{event.actor} · {event.created_at}</p></article>)}{!events.length && <p>ยังไม่มีประวัติ</p>}</div> : <form className="drawer-body" onSubmit={(e) => { e.preventDefault(); onSave(isNew ? { ...EMPTY_TASK, ...draft } : draft); }}>
-        <Field label="โปรเจกต์"><select value={draft.project_id} disabled={!isNew} onChange={e=>field('project_id',Number(e.target.value))}>{projects.filter(p=>p.id===draft.project_id||p.role!=='viewer').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
-        <Field label="ชื่องาน"><input required value={draft.title} onChange={(e) => field('title', e.target.value)} disabled={!editable} /></Field>
-        <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))} disabled={!editable}>{STATUSES.map((s, i) => <option key={s} value={i}>{s}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} disabled={!editable} /></Field></div>
-        <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} disabled={!editable} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} disabled={!editable} /></Field></div>
-        <Field label="สรุปสำหรับผู้ชมภายนอก"><textarea rows={3} value={draft.public_summary} onChange={(e) => field('public_summary', e.target.value)} disabled={!editable} /></Field>
-        {editable && <><Field label="รายละเอียดและขอบเขตงาน"><textarea rows={6} value={draft.scope ?? ''} onChange={(e) => field('scope', e.target.value)} /></Field>
-          <Field label="สาเหตุที่ติดขัด"><textarea rows={2} value={draft.blocked_reason ?? ''} onChange={(e) => field('blocked_reason', e.target.value)} /></Field>
-          <Checklist value={draft.checklist ?? []} onChange={(value) => field('checklist', value)} />
-          <Field label="เกณฑ์ตรวจรับ"><textarea rows={5} value={draft.criteria ?? ''} onChange={(e) => field('criteria', e.target.value)} /></Field>
-          <Field label="หลักฐาน"><textarea rows={4} value={draft.evidence ?? ''} onChange={(e) => field('evidence', e.target.value)} /></Field>
-        </>}
-        {!isNew && <div className="read-only"><span>เปิดใช้จริง</span><strong>{formatDate(draft.actual_released_at)}</strong><span>Version</span><strong>{draft.version}</strong></div>}
-        {editable && <div className="drawer-actions"><button type="button" onClick={onClose}>ยกเลิก</button><button className="primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : isNew ? 'สร้างงาน' : 'บันทึก'}</button></div>}
-      </form>}
-    </aside>
-  </div>;
-}
-
-function Checklist({ value, onChange }: { value: ChecklistItem[]; onChange: (v: ChecklistItem[]) => void }) {
-  const [newItem, setNewItem] = useState('');
-  return <section className="checklist"><div className="section-heading"><strong>งานย่อย / เช็กลิสต์</strong><small>{value.filter((x) => x.done).length}/{value.length}</small></div>
-    {value.map((item, index) => <label key={index}><input type="checkbox" checked={item.done} onChange={() => onChange(value.map((x, i) => i === index ? { ...x, done: !x.done } : x))} /><span>{item.label}</span><button type="button" onClick={() => onChange(value.filter((_, i) => i !== index))} aria-label="ลบ">×</button></label>)}
-    <div className="add-check"><input placeholder="เพิ่มงานย่อย" value={newItem} onChange={(e) => setNewItem(e.target.value)} /><button type="button" onClick={() => { if (newItem.trim()) { onChange([...value, { label: newItem.trim(), done: false }]); setNewItem(''); } }}>เพิ่ม</button></div>
-  </section>;
-}
-
-function dateTime(value: string | null) {
-  return value ? new Date(value.replace(' ', 'T') + 'Z').toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 }
 
 function linkState(link: AccessLink) {
@@ -282,6 +239,11 @@ function AccessManager({ projects }: { projects: Project[] }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shown, setShown] = useState<{ linkId: number; link: string } | null>(null);
+  function showLink(linkId: number) {
+    if (shown?.linkId === linkId) { setShown(null); return; }
+    run(async () => { const data = await api<{ link: string }>(`/access/links/${linkId}/url`); setShown({ linkId, link: data.link }); setCopied(false); });
+  }
   const selectedIds = allProjects ? projects.map((p) => p.id) : projectIds;
   const visibleMembers = members.filter((m) => showRevoked || !m.revoked_at);
   async function load() { try { setMembers(await api<AccessMember[]>('/access')); } catch (e) { setError(message(e)); } }
@@ -312,7 +274,7 @@ function AccessManager({ projects }: { projects: Project[] }) {
     run(async () => { await api('/projects', { method: 'POST', body: JSON.stringify({ name: projectName, description }) }); location.reload(); });
   }
   const issuedLink = (memberId: number) => issued?.memberId === memberId && <div className="generated-link">
-    <p>{issued.permanent ? 'ลิงก์ถาวร ใช้ซ้ำได้ไม่มีวันหมดอายุจนกว่าจะปิด · ลิงก์แสดงครั้งเดียว กรุณาคัดลอกเก็บไว้' : 'ลิงก์ใช้ได้ครั้งเดียวภายใน 7 วัน'}</p>
+    <p>{issued.permanent ? 'ลิงก์ถาวร ใช้ซ้ำได้ไม่มีวันหมดอายุจนกว่าจะปิด · เปิดดูอีกครั้งได้จากปุ่ม “ดูลิงก์” ในรายการสมาชิก' : 'ลิงก์ใช้ได้ครั้งเดียวภายใน 7 วัน · แสดงครั้งเดียว กรุณาคัดลอกเก็บไว้'}</p>
     <input aria-label="ลิงก์เชิญที่สร้างแล้ว" readOnly value={issued.link} onFocus={(e) => e.target.select()} />
     <button onClick={async () => { try { await navigator.clipboard.writeText(issued.link); setCopied(true); } catch { setError('คัดลอกไม่สำเร็จ กรุณาเลือกและคัดลอกลิงก์จากช่อง'); } }}>{copied ? 'คัดลอกแล้ว' : 'คัดลอก'}</button>
   </div>;
@@ -344,9 +306,11 @@ function AccessManager({ projects }: { projects: Project[] }) {
             {links.length > 0 && <ul className="link-list">{links.map((link) => <li key={link.id} className={link.revoked_at ? 'closed' : ''}>
               <span className="link-kind-badge">{link.reusable ? 'ลิงก์ถาวร' : 'ใช้ครั้งเดียว'}</span>
               <small>{linkState(link)}{link.current && ' · ลิงก์ที่คุณใช้อยู่'}</small>
+              {link.viewable && <button className="text-action" disabled={busy} onClick={() => showLink(link.id)}>{shown?.linkId === link.id ? 'ซ่อนลิงก์' : 'ดูลิงก์'}</button>}
               {!link.revoked_at && !link.current && !member.revoked_at && (link.reusable || !link.consumed_at) && (closing === link.id
                 ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => closeLink(link.id)}>ยืนยันปิด</button><button className="text-action" onClick={() => setClosing(0)}>ไม่ปิด</button></span>
                 : <button className="danger-text" onClick={() => setClosing(link.id)}>ปิดลิงก์</button>)}
+              {shown?.linkId === link.id && <div className="generated-link"><input aria-label="ลิงก์ถาวร" readOnly value={shown.link} onFocus={(e) => e.target.select()} /><button onClick={async () => { try { await navigator.clipboard.writeText(shown.link); setCopied(true); } catch { setError('คัดลอกไม่สำเร็จ กรุณาเลือกและคัดลอกลิงก์จากช่อง'); } }}>{copied ? 'คัดลอกแล้ว' : 'คัดลอก'}</button></div>}
             </li>)}</ul>}
             {issuedLink(member.id)}
           </article>;
@@ -356,7 +320,6 @@ function AccessManager({ projects }: { projects: Project[] }) {
     </div></>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="field"><span>{label}</span>{children}</label>; }
 function Empty({ title, text }: { title: string; text: string }) { return <div className="empty"><h2>{title}</h2><p>{text}</p></div>; }
 function Centered({ children }: { children: React.ReactNode }) { return <main className="centered">{children}</main>; }
 

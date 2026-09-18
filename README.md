@@ -14,6 +14,7 @@
 5. [TASKS.md](TASKS.md) — งานที่ทำแล้วและงานถัดไป
 6. [docs/WORKLOG.md](docs/WORKLOG.md) — บันทึกการทำงานและเหตุผลของการตัดสินใจ
 7. [design.md](design.md) — แนวทางดีไซน์
+8. [docs/TASK-GUIDE.md](docs/TASK-GUIDE.md) — วิธีเขียน/อัปเดตงาน งานย่อย แจ้ง Lark และคำสั่ง `scripts/wb.mjs` สำหรับคนและ AI
 
 ## คำสั่งที่ใช้บ่อย
 

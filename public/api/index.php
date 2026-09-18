@@ -28,7 +28,9 @@ try {
  }
  $u=requireUser();if ($method!=='GET') requireCsrf($u);
  require dirname(__DIR__,2).'/api/meetings.php';
+ require dirname(__DIR__,2).'/api/task-updates.php';
  meetingRoutes($route,$method,$u);
+ taskUpdateRoutes($route,$method,$u);
  if ($route==='/logout'&&$method==='POST'){query('DELETE FROM access_sessions WHERE token_hash=?',[$u['token_hash']]);cookieToken('',time()-3600);reply(200,'ออกจากระบบแล้ว');}
  if ($route==='/projects'&&$method==='GET') {
     $rows=$u['is_admin']?query("SELECT id,name,description,'admin' AS role FROM projects ORDER BY id")->fetchAll():query('SELECT p.id,p.name,p.description,m.role FROM projects p JOIN memberships m ON p.id=m.project_id WHERE m.principal_id=? ORDER BY p.id',[$u['id']])->fetchAll();
@@ -39,8 +41,15 @@ try {
     requireAdmin($u);$members=[];
     foreach(query('SELECT id,label,is_admin,revoked_at,created_at FROM principals ORDER BY id DESC')->fetchAll() as $p)$members[(int)$p['id']]=['id'=>(int)$p['id'],'label'=>$p['label'],'is_admin'=>(bool)$p['is_admin'],'revoked_at'=>$p['revoked_at'],'created_at'=>$p['created_at'],'projects'=>[],'links'=>[]];
     foreach(query('SELECT m.principal_id,m.project_id,m.role,pr.name AS project_name FROM memberships m JOIN projects pr ON pr.id=m.project_id ORDER BY pr.id')->fetchAll() as $m)if(isset($members[(int)$m['principal_id']]))$members[(int)$m['principal_id']]['projects'][]=['project_id'=>(int)$m['project_id'],'project_name'=>$m['project_name'],'role'=>$m['role']];
-    foreach(query('SELECT id,principal_id,reusable,expires_at,consumed_at,last_used_at,revoked_at,created_at FROM invitations ORDER BY id DESC')->fetchAll() as $i)if(isset($members[(int)$i['principal_id']]))$members[(int)$i['principal_id']]['links'][]=['id'=>(int)$i['id'],'reusable'=>(bool)$i['reusable'],'expires_at'=>$i['expires_at'],'consumed_at'=>$i['consumed_at'],'last_used_at'=>$i['last_used_at'],'revoked_at'=>$i['revoked_at'],'created_at'=>$i['created_at'],'current'=>(int)$i['id']===(int)$u['invitation_id']];
+    foreach(query('SELECT id,principal_id,reusable,token_cipher IS NOT NULL AS viewable,expires_at,consumed_at,last_used_at,revoked_at,created_at FROM invitations ORDER BY id DESC')->fetchAll() as $i)if(isset($members[(int)$i['principal_id']]))$members[(int)$i['principal_id']]['links'][]=['id'=>(int)$i['id'],'reusable'=>(bool)$i['reusable'],'viewable'=>(bool)$i['viewable']&&(bool)$i['reusable']&&!$i['revoked_at'],'expires_at'=>$i['expires_at'],'consumed_at'=>$i['consumed_at'],'last_used_at'=>$i['last_used_at'],'revoked_at'=>$i['revoked_at'],'created_at'=>$i['created_at'],'current'=>(int)$i['id']===(int)$u['invitation_id']];
     reply(200,'สิทธิ์การเข้าถึง',array_values($members));
+ }
+ if(preg_match('~^/access/links/(\d+)/url$~',$route,$m)&&$method==='GET') {
+    requireAdmin($u);
+    $i=query('SELECT token_cipher FROM invitations WHERE id=? AND reusable=1 AND revoked_at IS NULL',[(int)$m[1]])->fetch();
+    $token=$i?openToken($i['token_cipher']):null;
+    if(!$token)reply(404,'ลิงก์นี้เปิดดูย้อนหลังไม่ได้ (สร้างก่อนเปิดระบบเก็บลิงก์ หรือถูกปิดแล้ว) ให้สร้างลิงก์ถาวรใหม่แทน');
+    reply(200,'ลิงก์ถาวร',['link'=>linkUrl($token)]);
  }
  if(preg_match('~^/access/links/(\d+)/close$~',$route,$m)&&$method==='POST') {
     requireAdmin($u);$id=(int)$m[1];
@@ -85,9 +94,10 @@ try {
        reply(200,'งาน',['items'=>array_map(function($t)use($role){return taskDto($t,$role);},$rows),'next_cursor'=>$more?(int)end($rows)['id']:null]);
     }
     if($method==='POST') {
-       editable($role);$d=taskData(body());db()->beginTransaction();
+       editable($role);$data=body();$target=notifyTarget($data);$d=taskData($data);db()->beginTransaction();
        query('INSERT INTO tasks(project_id,title,feature,public_summary,scope,criteria,evidence,assignee,blocked_reason,checklist,status,planned_go_live_on,actual_released_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',[$project,$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?gmdate('Y-m-d H:i:s'):null]);
-       $id=(int)db()->lastInsertId();event($id,$u,'created',['status'=>$d['status'],'deadline'=>$d['planned_go_live_on']]);db()->commit();reply(201,'สร้างงานแล้ว',taskDto(query('SELECT * FROM tasks WHERE id=?',[$id])->fetch(),$role));
+       $id=(int)db()->lastInsertId();event($id,$u,'created',['status'=>$d['status'],'deadline'=>$d['planned_go_live_on']]);$saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
+       notifyAfterCommit($target,$saved,$u,'งานใหม่'.($d['public_summary']!==''?': '.$d['public_summary']:''));reply(201,'สร้างงานแล้ว',taskDto($saved,$role));
     }
  }
  if(preg_match('~^/tasks/(\d+)(/events)?$~',$route,$m)) {
@@ -96,12 +106,13 @@ try {
     if($method==='GET')reply(200,'รายละเอียด',taskDto($t,$role));
     if($method==='PATCH'||$method==='DELETE') {
        editable($role);$data=body();if(!isset($data['version'])||!is_int($data['version']))reply(422,'ต้องระบุ version');
-       $d=$method==='PATCH'?taskData($data):null;db()->beginTransaction();
+       $target=notifyTarget($data);$d=$method==='PATCH'?taskData($data):null;db()->beginTransaction();
        if($method==='DELETE')$stmt=query('UPDATE tasks SET archived=1,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$id,$data['version']]);
        else $stmt=query('UPDATE tasks SET title=?,feature=?,public_summary=?,scope=?,criteria=?,evidence=?,assignee=?,blocked_reason=?,checklist=?,status=?,planned_go_live_on=?,actual_released_at=?,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?($t['actual_released_at']?:gmdate('Y-m-d H:i:s')):null,$id,$data['version']]);
        if($stmt->rowCount()!==1){db()->rollBack();reply(409,'มีคนแก้งานนี้แล้ว กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก');}
        $changes=[];if($d)foreach($d as $key=>$value)if((string)$t[$key]!== (string)$value)$changes[$key]=['from'=>$t[$key],'to'=>$value];
-       event($id,$u,$method==='DELETE'?'archived':'updated',$changes);$saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();reply(200,'บันทึกแล้ว',taskDto($saved,$role));
+       event($id,$u,$method==='DELETE'?'archived':'updated',$changes);$saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
+       if($d)notifyAfterCommit($target,$saved,$u,changeHeadline($changes,$data['notify_text']??''));reply(200,'บันทึกแล้ว',taskDto($saved,$role));
     }
  }
  reply(404,'ไม่พบรายการที่ร้องขอ');

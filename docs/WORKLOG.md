@@ -120,3 +120,19 @@ User asked for deploy + import. Pushed 494acf2. Production before: DEPLOYED_COMM
 - Import: copied scripts/import-lark-base.php + the backup JSON into workboard-app (the script is not in the image), dry run (0 projects, 99 tasks), then --apply, rerun = 0 new. Temporary copies removed from the container and /tmp.
 Result: 99 tasks (Mini ERP 47, Voice Call 17, HR Connect 16, Dashboard 11, PrimaDesk 8; 71 released / 19 รอเปิดใช้ / 9 กำลังทำ), all without go-live date, 99 `imported` events by principal 3 "นำเข้าจาก Lark Base". Site /api/v1/session and / return 200.
 Rollback (data): `gunzip -c /opt/backups/workboard/pre-004-20260918164501.sql.gz | docker exec -i workboard-db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" workboard'`.
+
+
+## 2026-09-18 — production status inspection
+Read-only SSH inspection: DEPLOYED_COMMIT=494acf2; workboard-app Up; workboard-db healthy; HTTPS root HTTP 200; session API ok with user=null (unauthenticated). Backup files present including pre-004-20260918164501.sql.gz. Production admin link file exists at scratch/production-admin-link.txt (token not logged or redeemed). No viewer link file found among scratch filenames containing link; active viewer memberships were not inspected. No integration suite or database recount run; 99 imported tasks remains a prior-session result. Next: use TASKS.md for remaining features; issue viewer links from Access when requested.
+
+## 2026-09-18 — sub-tasks, progress notes, Lark bots, viewable links (local)
+Owner feedback: viewers landed on the weekly report; imported tasks say things like "ทำไปแล้ว 3 จาก 8 ขั้น" with no detail; wants sub-tasks that are easy to keep updating; people and AI agents will read/update tasks from this DB and need a template; meeting reports could not be deleted; merge overview + weekly report; Lark group notices on demand; show the viewer link again in Access.
+Decisions (owner, via questions): helpers are both people and AI · permanent links viewable (encrypted) · Lark = manual send + opt-in on save · build the system first, then fill old tasks per project.
+- Local DB was missing migration 004 (API test failed with 500 on undated tasks); applied 004 and 005 locally.
+- Sub-tasks stay in tasks.checklist JSON, now {id,label,done,note,done_at}; legacy items get "i<n>" ids on read. POST /tasks/{id}/subtasks (add/set/remove) locks the row, needs no version, bumps version, logs a `subtask` event. Viewers get id/label/done only.
+- POST /tasks/{id}/notes (event `note`), POST /tasks/{id}/notify, GET /lark/targets; task POST/PATCH accept notify + notify_text. Lark is called after commit; failure returns 502 "บันทึกแล้ว แต่ส่งเข้า Lark ไม่สำเร็จ". Signature: base64(HMAC-SHA256(key=ts+"\n"+secret, "")). Verified once against the test group.
+- Meeting "delete" was an archive button hidden at the bottom of the edit tab; moved to the read tab. The API was fine.
+- Migration 005 invitations.token_cipher (AES-256-GCM, LINK_KEY). GET /access/links/{id}/url for admins. scripts/seal-link.php stores a pre-005 link read from STDIN.
+- scripts/wb.mjs CLI + docs/TASK-GUIDE.md.
+Checks: node tests/api.mjs (+ WORKBOARD_LARK_TEST=1 once), report-format, presentation, calendar-items, tsc, build, PHP lint. Browser (Playwright) 1440 + 375: viewer lands on board, deep link ?task=, viewer sub-task list, instant tick keeps unsaved edits, full save without conflict, progress tab, merged overview, meeting delete, task delete, stored link reveal. QA fixtures archived/revoked afterwards.
+Not done: production deploy (needs owner go-ahead), filling details of the 99 imported tasks.

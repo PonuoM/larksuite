@@ -117,7 +117,9 @@ try {
 
   const viewerList = await call(viewer, `/projects/${projectId}/tasks`);
   const projected = viewerList.payload.data.items.find((item) => item.id === taskId);
-  if (!projected || projected.public_summary !== taskInput.public_summary || 'scope' in projected || 'checklist' in projected) throw new Error('viewer projection failed');
+  if (!projected || projected.public_summary !== taskInput.public_summary || 'scope' in projected) throw new Error('viewer projection failed');
+  // Viewers see sub-task names and progress, never notes.
+  if (projected.checklist?.length !== 1 || projected.checklist[0].label !== 'สร้างงาน' || projected.checklist[0].done !== true || 'note' in projected.checklist[0]) throw new Error('viewer sub-task projection failed: ' + JSON.stringify(projected.checklist));
 
   const denied = await call(viewer, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 2, version: version + 1 }) });
   if (denied.status !== 403) throw new Error(`viewer mutation should be 403, got ${denied.status}`);
@@ -125,7 +127,38 @@ try {
   const history = await call(editor, `/tasks/${taskId}/events`);
   if (history.status !== 200 || history.payload.data.length < 2) throw new Error('history failed');
 
-  const archived = await call(editor, `/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ version: version + 1 }) });
+  // Sub-task operations merge on the server (no version), keep stable ids and are audited.
+  const sub = (body) => call(editor, `/tasks/${taskId}/subtasks`, { method: 'POST', body: JSON.stringify(body) });
+  const added = await sub({ op: 'add', label: 'ออกแบบหน้าจอ', note: 'ร่างแรก' });
+  const addedItem = added.payload.data?.checklist?.[1];
+  if (added.status !== 200 || !addedItem || !/^[a-z0-9]{1,16}$/.test(addedItem.id) || addedItem.done || addedItem.note !== 'ร่างแรก') throw new Error('add sub-task failed: ' + JSON.stringify(added));
+  const done = await sub({ op: 'set', id: addedItem.id, done: true, note: 'ส่งให้ทีมดูแล้ว' });
+  const doneItem = done.payload.data?.checklist?.[1];
+  if (done.status !== 200 || !doneItem?.done || !doneItem.done_at || doneItem.note !== 'ส่งให้ทีมดูแล้ว' || done.payload.data.version !== version + 3) throw new Error('set sub-task failed: ' + JSON.stringify(done));
+  if ((await sub({ op: 'set', id: 'missing', done: true })).status !== 404) throw new Error('unknown sub-task accepted');
+  if ((await sub({ op: 'set', id: addedItem.id, done: 'yes' })).status !== 422) throw new Error('non-boolean done accepted');
+  if ((await sub({ op: 'bogus' })).status !== 422) throw new Error('unknown op accepted');
+  if ((await call(viewer, `/tasks/${taskId}/subtasks`, { method: 'POST', body: JSON.stringify({ op: 'add', label: 'x' }) })).status !== 403) throw new Error('viewer changed sub-tasks');
+  const firstId = done.payload.data.checklist[0].id;
+  const removed = await sub({ op: 'remove', id: firstId });
+  if (removed.status !== 200 || removed.payload.data.checklist.length !== 1 || removed.payload.data.checklist[0].id !== addedItem.id) throw new Error('remove sub-task failed');
+  // A full save keeps the ids and done_at it was given.
+  const full = await call(editor, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 1, checklist: removed.payload.data.checklist, version: removed.payload.data.version }) });
+  if (full.status !== 200 || full.payload.data.checklist[0].id !== addedItem.id || full.payload.data.checklist[0].done_at !== doneItem.done_at) throw new Error('full save lost sub-task identity: ' + JSON.stringify(full.payload));
+  const note = await call(editor, `/tasks/${taskId}/notes`, { method: 'POST', body: JSON.stringify({ text: 'ทำหน้า list เสร็จ รอ API' }) });
+  if (note.status !== 201) throw new Error('note failed: ' + JSON.stringify(note));
+  if ((await call(editor, `/tasks/${taskId}/notes`, { method: 'POST', body: JSON.stringify({ text: ' ' }) })).status !== 422) throw new Error('empty note accepted');
+  if ((await call(editor, `/tasks/${taskId}/notes`, { method: 'POST', body: JSON.stringify({ text: 'x', notify: 'everyone' }) })).status !== 422) throw new Error('unknown Lark target accepted');
+  if ((await call(editor, `/tasks/${taskId}/notify`, { method: 'POST', body: '{}' })).status !== 422) throw new Error('notify without target accepted');
+  const actions = (await call(editor, `/tasks/${taskId}/events`)).payload.data.map((e) => e.action);
+  if (actions.filter((a) => a === 'subtask').length !== 3 || !actions.includes('note')) throw new Error('sub-task/note history missing: ' + actions.join(','));
+  if (process.env.WORKBOARD_LARK_TEST === '1') {
+    const sent = await call(editor, `/tasks/${taskId}/notify`, { method: 'POST', body: JSON.stringify({ target: 'test', notify: 'test', text: 'ทดสอบระบบแจ้งเตือนจาก Workboard (integration test)' }) });
+    if (sent.status !== 200) throw new Error('Lark test notify failed: ' + JSON.stringify(sent));
+  }
+  const current = full.payload.data.version;
+
+  const archived = await call(editor, `/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ version: current }) });
   if (archived.status !== 200) throw new Error('archive failed');
 
   const projectList = await call(admin, '/projects');
@@ -172,8 +205,15 @@ try {
   const accessList = (await call(admin, '/access')).payload.data;
   const permanentMember = accessList.find((m) => m.id === permanent.payload.data.id);
   const permanentLink = permanentMember?.links?.[0];
+  // Permanent links can be shown again when LINK_KEY is configured; one-time links never.
+  if (permanentLink?.viewable) {
+    const shown = await call(admin, `/access/links/${permanentLink.id}/url`);
+    if (shown.status !== 200 || shown.payload.data.link !== permanent.payload.data.link) throw new Error('stored permanent link differs');
+    if ((await call(viewer, `/access/links/${permanentLink.id}/url`)).status !== 403) throw new Error('viewer read a stored link');
+  } else if (process.env.WORKBOARD_EXPECT_VIEWABLE !== '0') throw new Error('permanent link not viewable (LINK_KEY missing?)');
   if (!permanentLink || permanentLink.reusable !== true || permanentLink.expires_at !== null || !permanentLink.last_used_at || permanentLink.consumed_at) throw new Error('permanent link listing incorrect: ' + JSON.stringify(permanentMember));
   if ((await call(admin, `/access/links/${permanentLink.id}/close`, { method: 'POST', body: '{}' })).status !== 200) throw new Error('close link failed');
+  if ((await call(admin, `/access/links/${permanentLink.id}/url`)).status !== 404) throw new Error('closed link still shown');
   if ((await call(firstDevice, '/projects')).status !== 401 || (await call(secondDevice, '/projects')).status !== 401) throw new Error('closed link sessions still active');
   if ((await redeemToken(permanent.payload.data.link)).status !== 401) throw new Error('closed link still redeemable');
   const replacement = await call(admin, `/access/${permanent.payload.data.id}/links`, { method: 'POST', body: JSON.stringify({ permanent: true }) });
@@ -187,6 +227,8 @@ try {
   if ((await call(admin, `/access/links/${adminLink}/close`, { method: 'POST', body: '{}' })).status !== 422) throw new Error('admin closed the link of the current session');
   const oneTime = await call(admin, '/access', { method: 'POST', body: JSON.stringify({ label: 'API one-time ' + marker, role: 'viewer', project_ids: [projectId] }) });
   extraPrincipals.push(oneTime.payload.data.id);
+  const oneTimeLink = (await call(admin, '/access')).payload.data.find((m) => m.id === oneTime.payload.data.id).links[0];
+  if (oneTimeLink.viewable || (await call(admin, `/access/links/${oneTimeLink.id}/url`)).status !== 404) throw new Error('one-time link is viewable');
   if ((await redeemToken(oneTime.payload.data.link)).status !== 200 || (await redeemToken(oneTime.payload.data.link)).status !== 401) throw new Error('default link is not one-time');
   const meetingInput = { title: 'API meeting '+marker, meeting_on:'2026-09-18', participants:'Internal participants', content:'## Summary\n- Agreed scope\n\n## Actions\n| Task | Owner |\n| --- | --- |\n| Review | Team |', published:false };
   const meetingCreated=await call(editor, '/projects/'+projectId+'/meetings', {method:'POST',body:JSON.stringify(meetingInput)});
@@ -214,7 +256,7 @@ try {
   if(eventCount!==3)throw new Error('meeting audit event count incorrect');
   if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
   if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive'] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links'] }, null, 2));
 } finally {
   if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
   const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');

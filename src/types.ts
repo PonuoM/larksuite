@@ -13,7 +13,8 @@ export type Project = {
   role: Role;
 };
 
-export type ChecklistItem = { label: string; done: boolean };
+// Sub-task. Viewers receive only id/label/done. id is assigned by the server (legacy items get "i0", "i1", …).
+export type ChecklistItem = { id?: string; label: string; done: boolean; note?: string; done_at?: string | null };
 
 export type Task = {
   id: number;
@@ -46,6 +47,7 @@ export type TaskEvent = {
 export type AccessLink = {
   id: number;
   reusable: boolean;
+  viewable: boolean;
   expires_at: string | null;
   consumed_at: string | null;
   last_used_at: string | null;
@@ -65,3 +67,5 @@ export type AccessMember = {
 };
 
 export type Meeting = { id: number; project_id: number; title: string; meeting_on: string; participants?: string; content?: string; published: boolean; version: number; updated_at: string };
+
+export type LarkTarget = { key: 'main' | 'test'; label: string };

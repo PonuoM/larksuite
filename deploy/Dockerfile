@@ -19,5 +19,5 @@ RUN docker-php-ext-install pdo_mysql \
 WORKDIR /var/www/html
 # .htaccess only exposes /, /assets/* and /api/v1/*; everything else (api/, .env) returns 403.
 COPY .htaccess ./
-COPY api/bootstrap.php api/meetings.php ./api/
+COPY api/bootstrap.php api/meetings.php api/task-updates.php ./api/
 COPY --from=build /app/public ./public

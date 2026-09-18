@@ -35,7 +35,7 @@
 ## ความหมายของสถานะ
 
 Phase 1 vertical slice ทำงานบน local และผ่าน integration test แล้ว
-Git local แยกจาก ERP; ไม่มี remote และยังไม่ได้ deploy ภายนอก
+Git แยกจาก ERP; remote https://github.com/PonuoM/larksuite และ production https://larksuite.prima49.com แล้ว
 AI/Git/FTP เป็นงานระยะถัดไปและต้องใช้ข้อมูลเป้าหมายจริงก่อนเชื่อมต่อ
 
 - [x] ยืนยัน Git root เป็น C:/AppServ/www/Workboard บน branch main แยกจาก ERP
@@ -60,3 +60,19 @@ AI/Git/FTP เป็นงานระยะถัดไปและต้อง
 - [x] (18 ก.ย.) สคริปต์นำเข้างานจาก Lark Base (`scripts/import-lark-base.php`) — นำเข้า 99 งาน 5 โปรเจกต์ลงฐาน local แล้ว
 - [x] (18 ก.ย.) ขึ้น production: สำรองฐาน, deploy 494acf2, migration 004, นำเข้า 99 งานจาก Lark Base ลงฐานจริง
 - [ ] แสดงคำอธิบายฟีเจอร์ (ตอนนี้ฟีเจอร์เป็นแค่ชื่อ คำอธิบายจาก Lark ไม่ได้ย้ายมา)
+
+- [x] 2026-09-18: Read-only production recheck: 494acf2, app Up, DB healthy, HTTPS 200, session API ok. No authenticated or integration tests this session.
+
+## 18 ก.ย. รอบ 2: feedback จากเจ้าของ (ทำบน local แล้ว ยังไม่ deploy)
+- [x] เข้าเว็บ/ลิงก์ผู้ชมแล้วเปิดที่บอร์ดงาน (ค่าเริ่มต้นเดิมคือรายงานสัปดาห์)
+- [x] รวม "ภาพรวม" + "รายงานสัปดาห์" เป็นเมนูเดียว (ลิงก์เก่า ?view=report ยังใช้ได้)
+- [x] ลบรายงานประชุม: ปุ่ม "ลบรายงาน" ในหน้าอ่าน + ยืนยันในแอป (เดิมซ่อนอยู่ท้ายแท็บแก้ไข ชื่อ "เก็บเข้าคลัง")
+- [x] ลบงานได้จาก drawer (API มีอยู่แล้ว แต่ไม่มีปุ่ม)
+- [x] งานย่อย: id คงที่, ติ๊ก/เพิ่ม/ลบ/โน้ตบันทึกทันที (merge ฝั่ง server ไม่ชน version), การ์ดแสดง x/y, ผู้ชมเห็นชื่อข้อ+ความคืบหน้า (ไม่เห็นโน้ต)
+- [x] บันทึกความคืบหน้าแบบต่อท้าย + แท็บ "ความคืบหน้า / ประวัติ" แสดงประวัติอ่านรู้เรื่อง; แม่แบบขอบเขต/เกณฑ์ตรวจรับ
+- [x] แจ้งกลุ่ม Lark (กลุ่มจริง/กลุ่มทดสอบ) ตอนบันทึก / ตอนบันทึกความคืบหน้า / ส่งอย่างเดียว; webhook อยู่ใน .env เท่านั้น
+- [x] ลิงก์ถาวรเปิดดูซ้ำได้ในหน้าการเข้าถึง (migration 005 + LINK_KEY) + scripts/seal-link.php สำหรับลิงก์เก่า
+- [x] scripts/wb.mjs (CLI สำหรับคน/AI) + docs/TASK-GUIDE.md (แม่แบบและวิธีอัปเดต)
+- [ ] Deploy: migration 005, เพิ่ม LINK_KEY/LARK_* ใน /opt/workboard/deploy/app.env, rebuild, seal ลิงก์ผู้ชมเดิม
+- [ ] ไล่เติมรายละเอียดงานเก่าทีละโปรเจกต์ตาม docs/TASK-GUIDE.md ข้อ 5
+- [ ] คุยกับเจ้าของ: งานในแต่ละโปรเจกต์ครบหรือยัง

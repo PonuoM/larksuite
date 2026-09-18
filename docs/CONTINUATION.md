@@ -10,7 +10,7 @@
 Phase 1 vertical slice ทำงานบน local ที่ http://localhost/Workboard/ แล้ว
 มี React production bundle, PHP API, MySQL migration/database, capability-link session, project authorization, task CRUD, persisted Kanban, right drawer, checklist, history และ access manager
 ลิงก์ผู้ดูแลเริ่มต้นอยู่ใน `scratch/initial-admin-link.txt` (ignored) และยังไม่ถูกใช้ อย่าใส่ token ลง commit/log
-ข้อมูล QA ถูก archive/revoke แล้ว ไม่มี remote หรือ public deployment
+ข้อมูล QA ถูก archive/revoke แล้ว; ปัจจุบันมี remote https://github.com/PonuoM/larksuite และ production https://larksuite.prima49.com แล้ว
 
 ## งานถัดไป
 
@@ -60,3 +60,10 @@ https://larksuite.prima49.com ใช้งานได้ (HTTPS ผ่าน Ca
 
 ## ล่าสุด: คู่มือส่งต่องาน
 docs/HANDOFF.md คือคู่มือหลักสำหรับคนรับงานต่อ (dev, deploy, DB, VPS, การเชื่อม AI) และ scripts/issue-admin-link.mjs ใช้ออกลิงก์ผู้ดูแลเมื่อลิงก์หาย
+
+
+## 2026-09-18 — production status inspection
+Read-only SSH inspection: DEPLOYED_COMMIT=494acf2; workboard-app Up; workboard-db healthy; HTTPS root HTTP 200; session API ok with user=null (unauthenticated). Backup files present including pre-004-20260918164501.sql.gz. Production admin link file exists at scratch/production-admin-link.txt (token not logged or redeemed). No viewer link file found among scratch filenames containing link; active viewer memberships were not inspected. No integration suite or database recount run; 99 imported tasks remains a prior-session result. Next: use TASKS.md for remaining features; issue viewer links from Access when requested.
+
+## ล่าสุด: งานย่อย / ความคืบหน้า / Lark (local, ยังไม่ deploy)
+ดู TASKS.md หัวข้อ "18 ก.ย. รอบ 2" และ docs/TASK-GUIDE.md. Deploy ต้องทำ: push, git archive → /opt/workboard, รัน 005_viewable_links.sql ใน workboard-db, เพิ่ม LINK_KEY (ใหม่ ห้ามใช้ของ local) + LARK_MAIN_*/LARK_TEST_* ใน deploy/app.env, docker compose build app && up -d, แล้ว seal ลิงก์ผู้ชมเดิมด้วย scripts/seal-link.php (อ่านลิงก์จาก STDIN)
