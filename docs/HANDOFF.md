@@ -115,6 +115,7 @@ curl https://larksuite.prima49.com/api/v1/session
 
 - `/opt/workboard/DEPLOYED_COMMIT` บอกว่าบน server เป็นโค้ดจาก commit ไหน
 - ไฟล์ที่ถูกลบออกจาก repo จะยังค้างอยู่บน server เพราะ `tar` ไม่ลบไฟล์เก่า ถ้าเป็นไฟล์สำคัญให้ลบบน server เอง
+- ถ้า commit นั้นแก้ `deploy/docker-compose.yml` ในส่วน `db` (เช่นเพิ่ม mount ของ migration) คำสั่ง `up -d app` จะสร้าง container ฐานข้อมูลใหม่ด้วย ข้อมูลไม่หายเพราะอยู่ใน volume แต่ฐานข้อมูลจะหยุดไม่กี่วินาที ควรทำตอนคนใช้น้อย
 - **ห้าม** `docker compose down -v` และห้ามลบ volume `workboard_db_data` เพราะเป็นข้อมูลจริงทั้งหมด
 
 ## 7. ฐานข้อมูลบน server

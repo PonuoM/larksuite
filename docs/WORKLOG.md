@@ -136,3 +136,8 @@ Decisions (owner, via questions): helpers are both people and AI · permanent li
 - scripts/wb.mjs CLI + docs/TASK-GUIDE.md.
 Checks: node tests/api.mjs (+ WORKBOARD_LARK_TEST=1 once), report-format, presentation, calendar-items, tsc, build, PHP lint. Browser (Playwright) 1440 + 375: viewer lands on board, deep link ?task=, viewer sub-task list, instant tick keeps unsaved edits, full save without conflict, progress tab, merged overview, meeting delete, task delete, stored link reveal. QA fixtures archived/revoked afterwards.
 Not done: production deploy (needs owner go-ahead), filling details of the 99 imported tasks.
+
+## 2026-09-18 — production deploy of 910c5a8
+Backup /opt/backups/workboard/pre-005-20260918192133.sql.gz (deploy/backup.sh ran but wrote no new file — check it). git archive → /opt/workboard, DEPLOYED_COMMIT=910c5a8, migration 005 applied as root, `docker compose build app && up -d app`.
+Note: `up -d app` also recreated workboard-db because the compose file gained the 005 initdb mount (a few seconds of DB downtime). Volume kept; verified afterwards: 99 tasks, 3 principals, 4 invitations, 2 meetings, columns from 004/005 present. HTTPS 200, /api/v1/session ok, new routes answer 401 unauthenticated, app log clean.
+Not done: LINK_KEY and LARK_* were not added to /opt/workboard/deploy/app.env (writing secrets to the server was blocked by the agent permission policy); until then the Lark picker and "ดูลิงก์" stay hidden and the old viewer link is not sealed.
