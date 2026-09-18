@@ -74,7 +74,7 @@ AI/Git/FTP เป็นงานระยะถัดไปและต้อง
 - [x] ลิงก์ถาวรเปิดดูซ้ำได้ในหน้าการเข้าถึง (migration 005 + LINK_KEY) + scripts/seal-link.php สำหรับลิงก์เก่า
 - [x] scripts/wb.mjs (CLI สำหรับคน/AI) + docs/TASK-GUIDE.md (แม่แบบและวิธีอัปเดต)
 - [x] Deploy 910c5a8 + migration 005 (สำรองฐานก่อน: pre-005-20260918192133.sql.gz)
-- [ ] เพิ่ม LINK_KEY/LARK_* ใน /opt/workboard/deploy/app.env แล้ว restart app และ seal ลิงก์ผู้ชมเดิม (รอเจ้าของทำหรืออนุญาต)
+- [x] เพิ่ม LINK_KEY/LARK_* ใน /opt/workboard/deploy/app.env (สำรอง app.env.bak.* ไว้), restart app, seal ลิงก์ผู้ชมเดิม (invitation 4)
 - [ ] ตรวจ deploy/backup.sh บน server: รันแล้วไม่มีไฟล์ใหม่
 - [ ] ไล่เติมรายละเอียดงานเก่าทีละโปรเจกต์ตาม docs/TASK-GUIDE.md ข้อ 5
 - [ ] คุยกับเจ้าของ: งานในแต่ละโปรเจกต์ครบหรือยัง
