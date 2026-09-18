@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+vendor/
+dist/
+storage/
+coverage/
+*.log
+*.sql.gz
+*.zip
+.playwright-mcp/
+.DS_Store
