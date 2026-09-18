@@ -19,6 +19,10 @@ const iconPaths = {
   access: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
 };
 
+function useAutoClear(value: string, clear: (v: string) => void, ms: number) {
+  useEffect(() => { if (!value) return; const t = setTimeout(() => clear(''), ms); return () => clearTimeout(t); }, [value]);
+}
+
 function Icon({ name }: { name: keyof typeof iconPaths }) {
   return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{iconPaths[name]}</svg>;
 }
@@ -43,6 +47,9 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  // Toasts close themselves (owner, 2026-09-18); errors stay longer because they usually need reading. × still works.
+  useAutoClear(notice, setNotice, 4000);
+  useAutoClear(error, setError, 8000);
 
   async function loadSession() {
     const data = await api<{ user: SessionUser | null; csrf?: string }>('/session');
@@ -270,6 +277,7 @@ function AccessManager({ projects, onProjectsChanged, onBack }: { projects: Proj
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [projectNotice, setProjectNotice] = useState('');
+  useAutoClear(projectNotice, setProjectNotice, 4000);
   const [shown, setShown] = useState<{ linkId: number; link: string } | null>(null);
   function showLink(linkId: number) {
     if (shown?.linkId === linkId) { setShown(null); return; }
