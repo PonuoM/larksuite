@@ -1,5 +1,7 @@
 # ทำงานต่อจากตรงนี้
 
+ล่าสุด production b71663b: แก้ชื่อการ์ดมือถือทะลุกรอบจาก button white-space:nowrap และ implicit grid min-content. กำหนด normal + minmax(0,1fr) + child min-width:0. Regression fixture ชื่อ VIP ยาว, อังกฤษติดกัน, assignee ยาว ผ่าน 320/375/414/437/768/1440 บน bundle จริง; ไม่มีข้อมูลจริงถูกแก้. Rollback image workboard-app:rollback-7f88763.
+
 ## Deploy ล่าสุด — 18 ก.ย. 2026
 Production 7f88763 (mobile workspace refinement) ตามคำสั่งเจ้าของ "deploy เลย". Build และ up --no-deps เฉพาะ app; DB container เดิม healthy. HTTPS root/session ผ่าน และ browser ตรวจ production bundle ด้วย API fixtures ที่ 320/375/414/768/1440 ผ่าน. ไม่มี migration. Rollback image: workboard-app:rollback-6f876b9. คำขอ "ขอใหม่หมด" ก่อนหน้านี้ยังไม่ได้เริ่มออกแบบใหม่ — ที่ deploy คือชุดปรับมือถือที่เสร็จแล้ว.
 

@@ -1,5 +1,9 @@
 # Work log
 
+## 2026-09-18 — mobile card overflow hotfix b71663b
+User screenshot showed long VIP title, ID and date beyond card bounds. Reproduced with long Thai/English title, unbroken English identifier and long assignee in scratch/ui-qa/check.mjs: card clientWidth 286 versus scrollWidth 1947/738. Root-level overflow checks from prior QA were insufficient (root clipping hid inner overflow).
+Traced global index.css button white-space:nowrap inherited into mrow-open; implicit grid track then expanded beyond the button. Fixed only card content with white-space:normal, overflow-wrap:anywhere, minmax(0,1fr), child min-width:0/max-width:100%, nonshrinking owner avatar. No overflow clipping workaround. Same test passes after fix. Build passed; deployed b71663b with --no-deps app, preserved image rollback-7f88763, session smoke OK. Production-bundle fixture browser suite passed 320/375/414/437/768/1440; long-title screenshot captured. No actual data edits. Still emulation, not a real device test.
+
 ## 2026-09-18 — deploy mobile refinement 7f88763
 Owner explicitly requested deployment. Re-ran build/typecheck, presentation, calendar-items and diff check: passed. Committed and pushed 7f88763; transferred git archive as a binary tar file via scp (no PowerShell binary pipe). Tagged old image workboard-app:rollback-6f876b9, built app on VPS and used docker compose up -d --no-deps app. No migration or other stack changes. DB container ID unchanged and healthy. Production marker 7f88763; HTTPS root 200, session ok/user=null. Startup log has standard Apache ServerName warning, no failure in smoke requests.
 Production assets tested in Chromium at 320/375/414/768/1440 with API fixtures (no authenticated production write): navigation, layout toggle, search, empty reset, drawer, no root overflow and nav clearance passed. No real-device test or extended monitoring claim. Full redesign mentioned before the deploy instruction has not been implemented.

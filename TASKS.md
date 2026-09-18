@@ -1,5 +1,7 @@
 # สถานะงาน
 
+- [x] แก้ mobile card overflow จาก global button nowrap: ชื่อยาว/คำอังกฤษติดกัน/ชื่อผู้รับผิดชอบยาวตัดบรรทัดใน Grid ได้; deploy b71663b และตรวจ production bundle ด้วย fixtures 6 ขนาดผ่าน
+
 ## 18 ก.ย. — mobile design refinement (local)
 - [x] ปรับรายการมือถือให้มีลำดับข้อความชัด เพิ่มเลขงาน/สรุป และสลับรายการ–บอร์ดปัดคอลัมน์ได้
 - [x] แก้พื้นที่ workspace ให้หักความสูงเมนูล่างจริง พร้อม safe area; drawer เต็มจอและช่องกรอก 16px
