@@ -1,0 +1,62 @@
+/* Hallmark · Workbench · existing paper/terracotta tokens · no decorative metrics */
+.brief-page { flex:1; min-height:0; overflow-y:auto; padding:0 24px 40px; }
+.brief-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 0; border-bottom:1px solid var(--line); }
+.brief-toolbar label,.brief-week label { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; }
+.brief-toolbar > span { color:var(--muted); font-size:12px; }
+.brief-section { max-width:1100px; margin:28px auto 0; }
+.brief-section > header { display:flex; justify-content:space-between; align-items:end; gap:12px; margin-bottom:14px; }
+.brief-number { font-size:10px; color:var(--muted); letter-spacing:.04em; }
+.brief-section h2 { font-size:19px; font-weight:500; margin:4px 0 0; }
+.brief-section header > small { color:var(--muted); font-size:11px; }
+.brief-filters { display:flex; gap:8px; margin-bottom:12px; }
+.brief-filters button { display:flex; align-items:center; gap:16px; min-height:44px; background:var(--surface); border:1px solid var(--line); color:var(--muted); padding:8px 14px; border-radius:7px; }
+.brief-filters button[aria-pressed=true] { color:var(--accent); background:var(--tint); border-color:var(--accent); }
+.brief-filters b { font-weight:500; font-variant-numeric:tabular-nums; }
+.brief-tasks,.brief-projects { border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+.brief-task { display:grid; grid-template-columns:42px minmax(0,1fr) 18px; gap:12px; width:100%; padding:14px 16px; background:transparent; color:var(--ink); border:0; border-bottom:1px solid var(--line); text-align:left; white-space:normal; overflow-wrap:anywhere; }
+.brief-task:last-child { border-bottom:0; }
+.brief-task > * { min-width:0; }
+.brief-task-id,.brief-task > span:last-child { font-size:11px; color:var(--muted); }
+.brief-task strong { font-size:13px; font-weight:500; line-height:1.65; }
+.brief-task small { display:block; font-size:11px; color:var(--muted); margin-top:3px; }
+.brief-task p { font-size:12px; color:var(--muted); margin:6px 0 0; line-height:1.6; }
+.brief-expand { border:0; background:transparent; color:var(--accent); padding:12px 16px; min-height:44px; text-align:left; }
+.brief-project { border-bottom:1px solid var(--line); }
+.brief-project:last-child { border:0; }
+.brief-project summary { display:grid; grid-template-columns:minmax(150px,1fr) minmax(0,2fr) 20px; align-items:center; gap:20px; padding:20px; cursor:pointer; list-style:none; }
+.brief-project summary::-webkit-details-marker { display:none; }
+.brief-project-heading { display:grid; gap:4px; min-width:0; }
+.brief-project-heading strong { font-weight:500; font-size:16px; overflow-wrap:anywhere; }
+.brief-project-heading small { font-size:11px; color:var(--muted); }
+.brief-project-stats { display:flex; flex-wrap:wrap; gap:8px 24px; color:var(--muted); font-size:12px; }
+.brief-project-stats b { color:var(--ink); font-weight:500; margin-left:6px; }
+.brief-chevron { color:var(--muted); }
+.brief-project[open] .brief-chevron { transform:rotate(180deg); }
+.brief-project-detail { border-top:1px solid var(--line); padding:0 16px; }
+.brief-project-detail > p { padding:12px 0; margin:0; }
+.brief-week { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.brief-week > span,.brief-caption { font-size:11px; color:var(--muted); line-height:1.7; }
+.brief-week button { margin-left:auto; min-height:40px; }
+.brief-empty { padding:20px 0; font-size:13px; color:var(--muted); line-height:1.7; }
+.brief-project summary:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
+@media (hover:hover) { .brief-task:hover,.brief-project summary:hover { background:var(--soft); } }
+@media (max-width:600px) {
+ .brief-page { padding:0 16px 24px; }
+ .brief-toolbar { align-items:start; flex-direction:column; gap:8px; }
+ .brief-toolbar label { width:100%; }
+ .brief-toolbar select { flex:1; min-width:0; font-size:16px; }
+ .brief-section { margin-top:24px; }
+ .brief-section > header { flex-direction:column; align-items:start; gap:4px; }
+ .brief-section h2 { font-size:18px; }
+ .brief-filters { gap:6px; }
+ .brief-filters button { flex:1; justify-content:space-between; gap:6px; padding:8px; font-size:12px; }
+ .brief-task { grid-template-columns:32px minmax(0,1fr) 12px; gap:8px; padding:14px 10px; }
+ .brief-project summary { grid-template-columns:minmax(0,1fr) 16px; gap:12px; padding:16px; }
+ .brief-project-stats { grid-row:2; grid-column:1/-1; font-size:11px; gap:6px 12px; }
+ .brief-chevron { grid-row:1; grid-column:2; }
+ .brief-project-detail { padding:0 8px; }
+ .brief-week { gap:10px; }
+ .brief-week label { width:100%; }
+ .brief-week input { flex:1; min-width:0; font-size:16px; }
+ .brief-week button { margin-left:0; }
+}

@@ -4,6 +4,7 @@ import { api, ApiError, setCsrf } from './api';
 import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task } from './types';
 import './index.css';
 import './mobile-workspace.css';
+import './project-brief.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
 import MobileBoard from './MobileBoard';

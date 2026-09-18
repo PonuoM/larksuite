@@ -16,7 +16,9 @@ try {
  assert.ok(html.includes('<h3>ประชุม</h3>'));assert.ok(html.includes('<strong>ข้อสรุป</strong>'));assert.ok(html.includes('<table>'));assert.ok(!html.includes('<script>'));assert.ok(html.includes('&lt;script&gt;'));
  const listHtml=renderToStaticMarkup(React.createElement(FormattedReport,{content:'- หลัก\n  - ย่อย\n- [x] เสร็จ'}));
  assert.ok(listHtml.includes('<li class="depth-1">ย่อย</li>'));assert.ok(listHtml.includes('<li class="check">'));assert.ok(listHtml.includes('<li>หลัก</li>'));
- const {default:ProjectViews}=await import(pathToFileURL(join(temp,'ProjectViews.js')));
+ const {default:ProjectViews,releasedDay}=await import(pathToFileURL(join(temp,'ProjectViews.js')));
+ assert.equal(releasedDay({actual_released_at:'2026-09-20 18:00:00'}),'2026-09-21','release crosses into Monday in Bangkok');
+ assert.equal(releasedDay({actual_released_at:null}),'');
  const projects=[{id:1,name:'Mini ERP',description:'ข้อมูลจริง',role:'viewer'}];
  const report=renderToStaticMarkup(React.createElement(ProjectViews,{view:'report',projects,tasks:[],projectId:0,onProject:()=>{},onOpen:()=>{}}));
  assert.ok(report.includes('Mini ERP'));assert.ok(report.includes('ไม่มีรายการในช่วงนี้'));

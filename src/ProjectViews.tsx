@@ -6,6 +6,7 @@ export function dateLabel(value: string) { return new Date(value+'T12:00:00').to
 export function weekRange(value: string) { const d=new Date(value+'T12:00:00'); d.setDate(d.getDate()-((d.getDay()+6)%7)); const start=localDate(d);d.setDate(d.getDate()+6);return [start,localDate(d)]; }
 export function localDate(d: Date) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 const sub=(t:Task)=>{const {done,total}=progress(t.checklist);return total?' (งานย่อย '+done+'/'+total+')':'';};
+export const releasedDay=(t:Task)=>t.actual_released_at?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t.actual_released_at.replace(' ','T')+'Z')):'';
 
 // Overview and weekly report on one page (owner decision 2026-09-18): metrics, then each project's week, blockers aside.
 export default function ProjectViews({ projects, tasks, projectId, onProject, onOpen }: {projects:Project[];tasks:Task[];projectId:number|null;onProject:(id:number,board?:boolean)=>void;onOpen:(t:Task)=>void}) {
@@ -15,8 +16,14 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
  // Waiting for a decision = the รอตัดสินใจ column or any open task with a blocked reason.
  const needsDecision=(t:Task)=>t.status!==4&&!!t.blocked_reason;
  const blockers=active.filter(needsDecision);const awaitingApproval=active.filter(t=>t.status===6);
- const released=(t:Task)=>t.status===4&&!!t.actual_released_at&&t.actual_released_at.slice(0,10)>=start&&t.actual_released_at.slice(0,10)<=end;
+ const released=(t:Task)=>t.status===4&&!!t.actual_released_at&&releasedDay(t)>=start&&releasedDay(t)<=end;
  const delivered=scoped.filter(released);
+ const overdue=active.filter(t=>!!t.planned_go_live_on&&t.planned_go_live_on<today());
+ const [focus,setFocus]=useState<'approval'|'blocked'|'late'>('approval');
+ const attention={approval:awaitingApproval,blocked:blockers,late:overdue};
+ const effectiveFocus=attention[focus].length?focus:awaitingApproval.length?'approval':blockers.length?'blocked':'late';
+ const attentionItems=attention[effectiveFocus];
+ const [showAllAttention,setShowAllAttention]=useState(false);
  const shownProjects=projects.filter(p=>!projectId||p.id===projectId);
  const groupsFor=(pt:Task[])=>[
   {label:'ส่งมอบในสัปดาห์นี้',items:pt.filter(released),tone:'good'},
@@ -26,20 +33,20 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
   {label:'รอข้อสรุป',items:pt.filter(needsDecision),tone:'accent'},
  ];
  function download() {
-  const lines=['# รายงานสัปดาห์',dateLabel(start)+' – '+dateLabel(end),''];
+  const lines=['# ภาพรวมปัจจุบันและรายการเปิดใช้รายสัปดาห์',dateLabel(start)+' – '+dateLabel(end),'ช่วงสัปดาห์ใช้กับรายการเปิดใช้เท่านั้น สถานะงานอื่นเป็นข้อมูลปัจจุบัน',''];
   for(const p of shownProjects) {lines.push('## '+p.name);const pt=scoped.filter(t=>t.project_id===p.id);for(const group of groupsFor(pt)){if(group.items.length){lines.push('### '+group.label);for(const t of group.items)lines.push('- ['+statuses[t.status]+'] '+t.title+sub(t)+' · '+(t.planned_go_live_on?'กำหนดเริ่มใช้ '+t.planned_go_live_on:'ยังไม่กำหนดวันเริ่มใช้')+(t.blocked_reason?' · '+t.blocked_reason:''));}}const waiting=pt.filter(t=>t.status===0&&!t.blocked_reason).length;if(waiting)lines.push('รอดำเนินการ '+waiting+' งาน');lines.push('');}
   const url=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='workboard-'+start+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
- return <><div className="toolbar"><select aria-label="โปรเจกต์ในรายงาน" value={projectId??0} onChange={e=>onProject(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="วันที่ในสัปดาห์" type="date" value={week} onChange={e=>e.target.value&&setWeek(e.target.value)}/><span className="period-label">{dateLabel(start)} – {dateLabel(end)}</span><button className="primary toolbar-end" onClick={download}>ดาวน์โหลดสรุป</button></div>
- <div className="view-content">
-  <div className="overview-metrics">{[[active.length,'งานที่ยังไม่จบ'],[active.filter(t=>t.status===1).length,'กำลังลงมือทำ'],[delivered.length,'เปิดใช้ในสัปดาห์นี้'],[blockers.length,'เรื่องที่ต้องช่วยตัดสินใจ']].map(([n,label])=><div key={label}><strong>{n}</strong><span>{label}</span></div>)}</div>
-  <div className="overview-layout"><div>
-   {shownProjects.map(p=>{const pt=scoped.filter(t=>t.project_id===p.id);const groups=groupsFor(pt);const waiting=pt.filter(t=>t.status===0&&!t.blocked_reason).length;
-    return <section className="project-report" key={p.id}><div><button className="project-title" onClick={()=>onProject(p.id,true)}>{p.name} ↗</button><p>{p.description}</p><p className="project-counts">{STATUS_ORDER.map(i=><span key={i}>{statuses[i]} <b>{pt.filter(t=>t.status===i).length}</b></span>)}</p></div>
-     <div>{groups.filter(g=>g.items.length).map(g=><section className="report-group" key={g.label}><h3 className={g.tone}>{g.label}</h3>{g.items.map(t=><button className="report-task" key={t.id} onClick={()=>onOpen(t)}><span>—</span><span>{t.title}{sub(t)&&<em className="report-sub">{sub(t)}</em>}{t.blocked_reason&&<small>{t.blocked_reason}</small>}</span></button>)}</section>)}
-      {waiting>0&&<p className="muted report-waiting">รอดำเนินการ {waiting} งาน · <button className="text-action" onClick={()=>onProject(p.id,true)}>ดูในบอร์ด</button></p>}
-      {groups.every(g=>!g.items.length)&&!waiting&&<p className="muted">ไม่มีรายการในช่วงนี้</p>}</div></section>})}
-  </div>
-  <aside className="overview-aside">{awaitingApproval.length>0&&<><h2>รออนุมัติ <small>{awaitingApproval.length}</small></h2>{awaitingApproval.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2></button>)}</>}<h2>ต้องการข้อสรุป</h2>{blockers.length?blockers.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2><p className="blocked">{t.blocked_reason}</p></button>):<p className="muted">ไม่มีเรื่องติดขัดในข้อมูลที่คุณเข้าถึงได้</p>}</aside></div>
- </div></>;
+ function row(t:Task,reason?:string){return <button className="brief-task" key={t.id} onClick={()=>onOpen(t)}><span className="brief-task-id">#{t.id}</span><span><strong>{t.title}</strong><small>{projects.find(p=>p.id===t.project_id)?.name}{t.assignee?' · '+t.assignee:''}</small>{reason&&<p>{reason}</p>}</span><span aria-hidden="true">↗</span></button>;}
+ return <div className="brief-page">
+  <div className="brief-toolbar"><label>โปรเจกต์<select aria-label="โปรเจกต์ในรายงาน" value={projectId??0} onChange={e=>onProject(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><span>สถานะปัจจุบัน · {active.length} งานยังไม่จบ</span></div>
+  <section className="brief-section"><header><div><span className="brief-number">01 / สิ่งที่ต้องติดตาม</span><h2>ต้องดูตอนนี้</h2></div><small>ตามข้อมูลที่คุณมีสิทธิ์เห็น</small></header>
+   <div className="brief-filters" role="group" aria-label="เรื่องที่ต้องติดตาม">{([['approval','รออนุมัติ'],['blocked','ติดขัด'],['late','เลยกำหนด']] as const).map(([key,label])=><button key={key} aria-pressed={effectiveFocus===key} onClick={()=>{setFocus(key);setShowAllAttention(false);}} disabled={!attention[key].length}>{label}<b>{attention[key].length}</b></button>)}</div>
+   {attentionItems.length?<div className="brief-tasks">{(showAllAttention?attentionItems:attentionItems.slice(0,5)).map(t=>row(t,effectiveFocus==='blocked'?t.blocked_reason:effectiveFocus==='late'?'กำหนดเริ่มใช้ '+dateLabel(t.planned_go_live_on!):'รอผู้มีสิทธิ์ตรวจและอนุมัติ'))}{attentionItems.length>5&&<button className="brief-expand" onClick={()=>setShowAllAttention(!showAllAttention)}>{showAllAttention?'แสดงน้อยลง':`ดูอีก ${attentionItems.length-5} งาน`}</button>}</div>:<p className="brief-empty">ไม่มีงานรออนุมัติ ติดขัด หรือเลยกำหนดในข้อมูลที่คุณเห็น</p>}
+  </section>
+  <section className="brief-section"><header><div><span className="brief-number">02 / สถานะปัจจุบัน</span><h2>แต่ละโปรเจกต์ถึงไหน</h2></div><small>{shownProjects.length} โปรเจกต์</small></header>
+   <div className="brief-projects">{shownProjects.map(p=>{const pt=scoped.filter(t=>t.project_id===p.id);const open=pt.filter(t=>t.status!==4);const approval=pt.filter(t=>t.status===6);const doing=pt.filter(t=>t.status===1);const ready=pt.filter(t=>t.status===3);const pending=pt.filter(t=>t.status===0);return <details className="brief-project" key={p.id}><summary><span className="brief-project-heading"><strong>{p.name}</strong><small>{open.length?`${open.length} งานยังไม่จบ`:'ไม่มีงานค้างในข้อมูลนี้'}</small></span><span className="brief-project-stats">{approval.length>0&&<span>รออนุมัติ <b>{approval.length}</b></span>}<span>รอดำเนินการ <b>{pending.length}</b></span><span>กำลังทำ <b>{doing.length}</b></span><span>รอทดสอบ/เปิดใช้ <b>{ready.length}</b></span></span><span className="brief-chevron" aria-hidden="true">⌄</span></summary><div className="brief-project-detail"><p className="muted">{STATUS_ORDER.map(s=>`${statuses[s]} ${pt.filter(t=>t.status===s).length}`).join(' · ')}</p>{open.length?open.map(t=>row(t,statuses[t.status]+sub(t))):<p className="brief-empty">ไม่มีงานค้าง</p>}<button className="brief-expand" onClick={()=>onProject(p.id,true)}>เปิดบอร์ด {p.name} ↗</button></div></details>;})}</div>
+  </section>
+  <section className="brief-section"><header><div><span className="brief-number">03 / ผลที่เปิดให้ใช้แล้ว</span><h2>เปิดใช้ในสัปดาห์ที่เลือก</h2></div></header><div className="brief-week"><label>เลือกสัปดาห์<input aria-label="วันที่ในสัปดาห์" type="date" value={week} onChange={e=>e.target.value&&setWeek(e.target.value)}/></label><span>{dateLabel(start)} – {dateLabel(end)}</span><button className="secondary" onClick={download}>ดาวน์โหลดสรุป</button></div><p className="brief-caption">ส่วนนี้อิงวันที่เปิดใช้จริง ส่วนด้านบนแสดงสถานะปัจจุบัน ไม่ใช่ประวัติย้อนหลัง</p>{delivered.length?delivered.map(t=>row(t,'เปิดใช้ '+dateLabel(releasedDay(t)))):<p className="brief-empty">ไม่มีรายการในช่วงนี้</p>}</section>
+ </div>;
 }
