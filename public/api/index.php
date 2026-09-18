@@ -26,6 +26,8 @@ try {
     db()->commit();cookieToken($sid,time()+604800);reply(200,'เข้าใช้งานแล้ว');
  }
  $u=requireUser();if ($method!=='GET') requireCsrf($u);
+ require dirname(__DIR__,2).'/api/meetings.php';
+ meetingRoutes($route,$method,$u);
  if ($route==='/logout'&&$method==='POST'){query('DELETE FROM access_sessions WHERE token_hash=?',[$u['token_hash']]);cookieToken('',time()-3600);reply(200,'ออกจากระบบแล้ว');}
  if ($route==='/projects'&&$method==='GET') {
     $rows=$u['is_admin']?query("SELECT id,name,description,'admin' AS role FROM projects ORDER BY id")->fetchAll():query('SELECT p.id,p.name,p.description,m.role FROM projects p JOIN memberships m ON p.id=m.project_id WHERE m.principal_id=? ORDER BY p.id',[$u['id']])->fetchAll();
@@ -36,10 +38,18 @@ try {
  if ($route==='/access'&&$method==='POST') {
     requireAdmin($u);$d=body();$label=textField($d,'label',120,true);$role=$d['role']??'';$project=(int)($d['project_id']??0);
     if(!in_array($role,['admin','editor','viewer'],true))reply(422,'สิทธิ์ไม่ถูกต้อง');
-    if($role!=='admin')roleFor($u,$project);
+    $projects=[];
+    if($role!=='admin') {
+       $ids=$d['project_ids']??[$project];
+       if(!is_array($ids)||!count($ids)||count($ids)>500)reply(422,'กรุณาเลือกอย่างน้อยหนึ่งโปรเจกต์');
+       foreach($ids as $id) {
+          if(!is_int($id)||$id<1)reply(422,'โปรเจกต์ไม่ถูกต้อง');
+          roleFor($u,$id);$projects[$id]=$id;
+       }
+    }
     $token=bin2hex(random_bytes(32));db()->beginTransaction();
     query('INSERT INTO principals(label,is_admin) VALUES(?,?)',[$label,$role==='admin'?1:0]);$pid=(int)db()->lastInsertId();
-    if($role!=='admin')query('INSERT INTO memberships(principal_id,project_id,role) VALUES(?,?,?)',[$pid,$project,$role]);
+    foreach($projects as $projectId)query('INSERT INTO memberships(principal_id,project_id,role) VALUES(?,?,?)',[$pid,$projectId,$role]);
     query('INSERT INTO invitations(principal_id,token_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY))',[$pid,hash('sha256',$token)]);
     db()->commit();reply(201,'ลิงก์นี้ใช้ได้หนึ่งครั้ง ภายใน 7 วัน',['id'=>$pid,'link'=>config()['APP_ORIGIN'].rtrim(config()['APP_BASE'],'/').'/#invite='.$token]);
  }

@@ -129,3 +129,6 @@ service accounts, scopes, check-run ingestion, proposal review และ audit
 
 ## Approved amendment — access links (supersedes password login)
 Use cryptographically random 256-bit invitation tokens, store only hashes, single-use redemption into a seven-day HttpOnly same-origin session, remove token from address after redemption, expire/revoke sessions and invitations. Links expire after seven days. Attribution identifies the issued recipient, not verified human identity. No password login. Admin links can manage projects; editor/viewer access is project-scoped. AI keys remain separate and outside this initial slice.
+
+## 2026-09-18 — requested report design and meeting calendar
+User requested restoring prototype Variant C visual structure, keeping invitation administration, and adding a daily meeting calendar. Extend the existing modular application (no rebuild): add overview/report routes sharing authorized task data; add project-scoped meetings and meeting_events with optimistic versions; monthly calendar with meeting/deadline entries; plain-text/Markdown input rendered safely into sections, lists and tables without calling AI or changing meaning; internal by default with explicit viewer publication. Validate project permissions, publication, dates, conflicts, persistence, month bounds, and safe formatting. Migration 002 adds tables only.

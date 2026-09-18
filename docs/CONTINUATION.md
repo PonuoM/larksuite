@@ -30,3 +30,14 @@ Phase 1 vertical slice ทำงานบน local ที่ http://localhost/Wo
 - hallmark สำหรับหน้าจอใหม่ โดยใช้รูปแบบ compact ที่กำหนดแล้ว ไม่สุ่มโครงใหม่
 - db เมื่อเริ่มสร้าง schema จริง อ่าน skill และตรวจ local connection ก่อน
 - handoff เมื่อส่งต่อรอบถัดไป
+
+## ล่าสุด: ปรับหน้าสิทธิ์ตาม feedback
+API POST /access รองรับ project_ids หลายรายการและ project_id แบบเดิม; UI เลือกทุกโปรเจกต์ปัจจุบันหรือหลายรายการได้ ไม่มีสิทธิ์อัตโนมัติสำหรับโปรเจกต์ในอนาคต ไม่เปลี่ยน schema และไม่ขยายสิทธิ์ของลิงก์เดิม
+สมาชิกแสดงคนละแถวและซ่อนผู้ถูกยกเลิกเป็นค่าเริ่มต้น ฟอร์มสร้างโปรเจกต์เปิดจากปุ่ม + โปรเจกต์
+Build/PHP syntax/API integration ผ่านแล้ว ยังไม่ได้ตรวจภาพหน้าจอของ UI รุ่นนี้
+
+## ล่าสุด: Variant C + ปฏิทินประชุม
+Default view เป็นรายงานสัปดาห์ (?view=report); views: overview, board, report, calendar, access. ใช้ design.md เป็นหลัก หน้าการเข้าถึงยังสร้างลิงก์พนักงานในระบบเดียวกัน
+Migration 002_meetings.sql รันบน local แล้ว ห้ามรันซ้ำ มี api/meetings.php และ src/MeetingCalendar.tsx, ProjectViews.tsx, FormattedReport.tsx, report-format.ts
+ปฏิทินคลิกวันเพื่อเพิ่ม/อ่านประชุม; วาง AI summary เป็นข้อความ/Markdown และดูหน้าอ่านก่อนบันทึก ไม่ได้เรียกโมเดล AI จริง รายงานใหม่เป็น internal จนกว่าจะ published; participants ไม่ส่งให้ viewer
+Validation: node tests/api.mjs, node tests/report-format.mjs, node tests/presentation.mjs, node scripts/build.mjs, PHP syntax ผ่าน; ยังไม่มี visual browser check เพราะไม่มี browser surface

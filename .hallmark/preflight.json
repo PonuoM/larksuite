@@ -1,0 +1,9 @@
+{
+  "reference": "ERP Workboard prototype Variant C",
+  "font": "Kanit",
+  "palette": "existing warm paper / terracotta",
+  "motion": "none",
+  "framework": "React + Vite + Tailwind",
+  "structure": "project index + report document",
+  "preserved": "compact chrome and right drawer"
+}

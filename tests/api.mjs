@@ -57,6 +57,10 @@ const projectId = Number(await sql('SELECT id FROM projects ORDER BY id LIMIT 1;
 const editor = await redeem(`API editor ${marker}`, 'editor', projectId);
 const viewer = await redeem(`API viewer ${marker}`, 'viewer', projectId);
 let taskId = 0;
+let meetingId = 0;
+const extraPrincipals = [];
+const admin = await redeem(`API admin ${marker}`, 'admin', projectId);
+extraPrincipals.push(admin.id);
 
 try {
   const taskInput = {
@@ -96,7 +100,62 @@ try {
   const archived = await call(editor, `/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ version: version + 1 }) });
   if (archived.status !== 200) throw new Error('archive failed');
 
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive'] }, null, 2));
+  const projectList = await call(admin, '/projects');
+  const allIds = projectList.payload.data.map((p) => Number(p.id));
+  if (allIds.length < 3) throw new Error('multi-project tests require at least 3 seeded projects');
+  for (const ids of [allIds.slice(0, 2), allIds]) {
+    const invited = await call(admin, '/access', { method: 'POST', body: JSON.stringify({ label: 'API multi ' + marker, role: 'viewer', project_ids: ids }) });
+    if (invited.status !== 201) throw new Error('multi-project invitation failed');
+    extraPrincipals.push(invited.payload.data.id);
+    const token = new URL(invited.payload.data.link).hash.slice(8);
+    const redeemed = await raw('/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+    if (redeemed.status !== 200) throw new Error('multi-project redemption failed');
+    const cookie = redeemed.headers.getSetCookie()[0].split(';')[0];
+    const session = await (await raw('/session', { headers: { Cookie: cookie } })).json();
+    const actor = { cookie, csrf: session.data.csrf };
+    const accessible = await call(actor, '/projects');
+    const actual = accessible.payload.data.map((p) => Number(p.id));
+    if (JSON.stringify(actual) !== JSON.stringify(ids)) throw new Error('project scope differs from selected IDs');
+    for (const id of ids) if ((await call(actor, '/projects/' + id + '/tasks')).status !== 200) throw new Error('selected project denied');
+    const outside = allIds.find((id) => !ids.includes(id));
+    if (outside && (await call(actor, '/projects/' + outside + '/tasks')).status !== 404) throw new Error('unselected project accessible');
+    if ((await call(actor, '/access')).status !== 403) throw new Error('viewer gained admin access');
+    const replay = await raw('/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+    if (replay.status !== 401) throw new Error('invite token reused');
+  }
+  for (const ids of [[], [allIds[0], 2147483647], ['invalid']]) {
+    const invalid = await call(admin, '/access', { method: 'POST', body: JSON.stringify({ label: 'API invalid ' + marker, role: 'viewer', project_ids: ids }) });
+    if (![404, 422].includes(invalid.status)) throw new Error('invalid project selection accepted');
+  }
+  const meetingInput = { title: 'API meeting '+marker, meeting_on:'2026-09-18', participants:'Internal participants', content:'## Summary\n- Agreed scope\n\n## Actions\n| Task | Owner |\n| --- | --- |\n| Review | Team |', published:false };
+  const meetingCreated=await call(editor, '/projects/'+projectId+'/meetings', {method:'POST',body:JSON.stringify(meetingInput)});
+  if(meetingCreated.status!==201)throw new Error('meeting create failed: '+JSON.stringify(meetingCreated));
+  meetingId=meetingCreated.payload.data.id;
+  if((await call(viewer,'/meetings/'+meetingId)).status!==404)throw new Error('internal meeting visible');
+  const hidden=await call(viewer,'/projects/'+projectId+'/meetings?month=2026-09');
+  if(hidden.payload.data.items.some(m=>m.id===meetingId))throw new Error('internal meeting leaked in calendar');
+  const published=await call(editor,'/meetings/'+meetingId,{method:'PATCH',body:JSON.stringify({...meetingInput,published:true,version:1})});
+  if(published.status!==200||published.payload.data.version!==2)throw new Error('publish/version failed');
+  const publicMeeting=await call(viewer,'/meetings/'+meetingId);
+  if(publicMeeting.status!==200||publicMeeting.payload.data.content!==meetingInput.content||'participants' in publicMeeting.payload.data)throw new Error('published meeting projection failed');
+  const month=await call(viewer,'/projects/'+projectId+'/meetings?month=2026-09');
+  if(!month.payload.data.items.some(m=>m.id===meetingId))throw new Error('published calendar entry missing');
+  const otherMonth=await call(editor,'/projects/'+projectId+'/meetings?month=2026-10');
+  if(otherMonth.payload.data.items.some(m=>m.id===meetingId))throw new Error('calendar month filter failed');
+  if((await call(editor,'/projects/'+projectId+'/meetings?month=2026-99')).status!==422)throw new Error('invalid month accepted');
+  if((await call(editor,'/projects/'+projectId+'/meetings',{method:'POST',body:JSON.stringify({...meetingInput,meeting_on:'2026-02-30'})})).status!==422)throw new Error('invalid meeting date accepted');
+  if((await call(editor,'/projects/'+allIds[1]+'/meetings?month=2026-09')).status!==404)throw new Error('cross-project calendar accessible');
+  if((await call(viewer,'/meetings/'+meetingId,{method:'PATCH',body:JSON.stringify({...meetingInput,version:2})})).status!==403)throw new Error('viewer edited meeting');
+  if((await call(editor,'/meetings/'+meetingId,{method:'PATCH',body:JSON.stringify({...meetingInput,version:1})})).status!==409)throw new Error('stale meeting overwrite');
+  const unpublish=await call(editor,'/meetings/'+meetingId,{method:'PATCH',body:JSON.stringify({...meetingInput,version:2})});
+  if(unpublish.status!==200||(await call(viewer,'/meetings/'+meetingId)).status!==404)throw new Error('unpublish failed');
+  const eventCount=Number(await sql('SELECT COUNT(*) FROM meeting_events WHERE meeting_id='+meetingId));
+  if(eventCount!==3)throw new Error('meeting audit event count incorrect');
+  if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
+  if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive'] }, null, 2));
 } finally {
-  await sql(`UPDATE principals SET revoked_at=UTC_TIMESTAMP() WHERE id IN (${editor.id},${viewer.id}); DELETE FROM access_sessions WHERE principal_id IN (${editor.id},${viewer.id});`);
+  if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
+  const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');
+  await sql(`UPDATE principals SET revoked_at=UTC_TIMESTAMP() WHERE id IN (${ids}); UPDATE invitations SET revoked_at=UTC_TIMESTAMP() WHERE principal_id IN (${ids}); DELETE FROM access_sessions WHERE principal_id IN (${ids});`);
 }

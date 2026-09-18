@@ -55,3 +55,5 @@ export type AccessRow = {
   role: Role | null;
   project_name: string | null;
 };
+
+export type Meeting = { id: number; project_id: number; title: string; meeting_on: string; participants?: string; content?: string; published: boolean; version: number; updated_at: string };
