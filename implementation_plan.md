@@ -1,6 +1,6 @@
 # Workboard — Implementation plan
 
-สถานะ: PROPOSED / รออนุมัติแผนก่อนเริ่มโค้ดระบบจริง
+สถานะ: APPROVED — ผู้ใช้อนุมัติการเข้าด้วยลิงก์ลับแทน login
 วันที่: 2026-09-18
 
 ## 1. ผลลัพธ์ที่ต้องการ
@@ -19,7 +19,7 @@
 - สร้าง public web root สำหรับเฉพาะ asset และ API entry; secrets, docs, Git และ source backend อยู่นอก web root ที่เปิดเผย
 - ยืนยัน PHP/MySQL/Node รุ่นที่มีจริงก่อนเลือก dependency; ทำ lockfile และ build แบบ production ไม่ใช้ Tailwind CDN
 
-โครงสร้างเป้าหมาย: frontend/, api/, api/migrations/, workers/, public/, docs/, tests/ (ยังไม่ได้ scaffold code)
+โครงสร้างที่เริ่มใช้แล้ว: src/, api/, api/migrations/, public/, docs/, tests/; เพิ่ม workers/ เมื่อเริ่ม Phase 3
 
 ## 3. ข้อมูลหลัก
 
@@ -126,3 +126,6 @@ service accounts, scopes, check-run ingestion, proposal review และ audit
 - PHP transactions และข้อจำกัด implicit commit ของ DDL — https://www.php.net/manual/en/pdo.transactions.php
 
 แหล่งอ้างอิงรองรับกลไกข้างต้น; โครงสร้างและ phase เป็นข้อเสนอสำหรับ Workboard ไม่ใช่ข้อสรุปจากเอกสารเหล่านั้น
+
+## Approved amendment — access links (supersedes password login)
+Use cryptographically random 256-bit invitation tokens, store only hashes, single-use redemption into a seven-day HttpOnly same-origin session, remove token from address after redemption, expire/revoke sessions and invitations. Links expire after seven days. Attribution identifies the issued recipient, not verified human identity. No password login. Admin links can manage projects; editor/viewer access is project-scoped. AI keys remain separate and outside this initial slice.

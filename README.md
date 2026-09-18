@@ -4,8 +4,9 @@
 
 ## สถานะปัจจุบัน
 
-ตั้ง repository และเอกสารแล้ว ยังไม่มีระบบจริง / ฐานข้อมูล / API / การ Deploy ในโฟลเดอร์นี้
-แผนระบบใหม่รออนุมัติก่อนเริ่มเขียนโค้ดตามกติกาที่ผู้ใช้ให้มา
+Phase 1 ใช้งานบนเครื่อง local แล้ว: ฐานข้อมูลแยก, ลิงก์เชิญแบบใช้ครั้งเดียว, session, สิทธิ์รายโปรเจกต์, task CRUD, Kanban ลากแล้วบันทึกถาวร, deadline บังคับ, right drawer, checklist, history และหน้าจัดการสิทธิ์
+
+ยังไม่ได้ Deploy สู่ภายนอกและยังไม่ได้ต่อ Git/FTP/AI จริง ข้อมูลจากระบบเหล่านั้นจะเข้ามาเป็นหลักฐานและข้อเสนอให้ทีมตรวจ ไม่เปลี่ยนสถานะงานอัตโนมัติ
 
 ## อ่านต่อในลำดับนี้
 
@@ -22,7 +23,24 @@
 
 ต้นแบบอยู่ใน ERP เดิม ใช้ข้อมูลสาธิต 18 งาน เก็บสถานะในหน่วยความจำ และรีเฟรชแล้วหาย ไม่ใช่ข้อมูลจริงจาก Lark/Git/FTP อย่าย้าย bundle ต้นแบบไปใช้เป็นระบบจริงโดยตรง
 
+## เปิดระบบ Local
+
+- URL: http://localhost/Workboard/
+- ลิงก์ผู้ดูแลเริ่มต้นอยู่ในไฟล์ `scratch/initial-admin-link.txt` ซึ่งถูก ignore จาก Git
+- ลิงก์เชิญใช้ได้ครั้งเดียวภายใน 7 วัน เมื่อเปิดแล้วระบบสร้าง session 7 วันในเบราว์เซอร์นั้น
+- หากต้องการให้คนอื่นเข้าจากอินเทอร์เน็ต ต้องกำหนด hosting, HTTPS และโดเมนก่อน ลิงก์ `localhost` ใช้ได้เฉพาะเครื่องนี้
+
+## คำสั่งพัฒนา
+
+```text
+npm install
+npm run build
+npm test
+```
+
+ไฟล์ `.env` ใช้ค่าจริงเฉพาะเครื่องและไม่เข้า Git ให้เริ่มจาก `.env.example` ฐานข้อมูลสร้างจาก `api/migrations/001_core.sql`
+
 ## ตำแหน่งโปรเจกต์
 
-C:/AppServ/www/Workboard — Git แยกจาก CRM_ERP_V4 ยังไม่ได้เชื่อม remote
-React + TypeScript + Vite + Tailwind / PHP + PDO / MySQL เป็นข้อเสนอสำหรับการพัฒนา ไม่ใช่รายการ dependency ที่ติดตั้งแล้ว
+C:/AppServ/www/Workboard — Git แยกจาก CRM_ERP_V4 และยังไม่ได้เชื่อม remote
+ระบบใช้ React + TypeScript + Vite + Tailwind / PHP + PDO / MySQL ตาม lockfile และ migration ใน repository นี้

@@ -10,4 +10,5 @@ coverage/
 *.sql.gz
 *.zip
 .playwright-mcp/
+scratch/
 .DS_Store

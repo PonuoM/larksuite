@@ -7,19 +7,21 @@
 
 ## จุดที่หยุด
 
-ตั้งโปรเจกต์ Git แยกและเอกสารแล้ว แผนระบบจริงยังรอผู้ใช้อนุมัติ
-ยังไม่มี runtime app/database/API/authentication ในโปรเจกต์ใหม่นี้
-UI ต้นแบบอยู่ที่ C:/AppServ/www/CRM_ERP_V4/docs/prototypes/workboard/ และยังเปิดได้ที่ URL เดิมใน README
+Phase 1 vertical slice ทำงานบน local ที่ http://localhost/Workboard/ แล้ว
+มี React production bundle, PHP API, MySQL migration/database, capability-link session, project authorization, task CRUD, persisted Kanban, right drawer, checklist, history และ access manager
+ลิงก์ผู้ดูแลเริ่มต้นอยู่ใน `scratch/initial-admin-link.txt` (ignored) และยังไม่ถูกใช้ อย่าใส่ token ลง commit/log
+ข้อมูล QA ถูก archive/revoke แล้ว ไม่มี remote หรือ public deployment
 
 ## งานถัดไป
 
-หากผู้ใช้อนุมัติแผน ให้บันทึกการอนุมัติและเริ่ม Phase 1 ตามแผน ไม่ต้องรอ Git/FTP integration secrets
-ตรวจ runtime ก่อนเลือกเวอร์ชัน dependencies สร้าง vertical slice login → project membership → task CRUD → persisted drag พร้อม deadline/version/audit
-อย่าทำการเชื่อม FTP จริงหรือ publish ก่อนระบุ target/environment
+เริ่ม Phase 2 จาก `TASKS.md`: touch/keyboard status control, weekly overview/report และ evidence records ที่มี source/freshness
+จากนั้นทำ Phase 3 service-account/check-run/observation/proposal ด้วย fixtures ก่อนต่อระบบจริง
+อย่าต่อ Git/FTP หรือ publish จนกว่าจะระบุ repository/branch/server/environment, secret storage และ deployment target
+ก่อนแก้ schema ให้สร้าง migration ใหม่ ห้ามแก้ `001_core.sql` หลังจุดนี้
 
 ## ประโยคสำหรับเริ่มต่อ
 
-“อ่าน AGENTS.md และ docs/CONTINUATION.md ของ Workboard แล้วทำต่อจาก TASKS.md โดยใช้ implementation_plan.md เป็นขอบเขต”
+“เปิด C:/AppServ/www/Workboard อ่าน AGENTS.md และ docs/CONTINUATION.md แล้วทำ Phase 2 ต่อจาก TASKS.md โดยรักษา capability-link และสิทธิ์รายโปรเจกต์เดิม”
 
 ## Suggested skills
 

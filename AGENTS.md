@@ -4,7 +4,7 @@ Read README.md, CONTEXT.md, implementation_plan.md, TASKS.md and docs/CONTINUATI
 
 ## Current stage
 
-Planning/bootstrap only. User asked to proceed with an independent project and continuity documentation. The supplied source-project rule requires approval of an implementation plan before code for a new system. The concrete plan is now implementation_plan.md; record user approval before production implementation. Do not repeat the approval request once it is granted.
+Implementation approved. User asked to proceed with an independent project and continuity documentation. The supplied source-project rule requires approval of an implementation plan before code for a new system. The concrete plan is now implementation_plan.md; User approval received; proceed with Phase 1 and capability-link access instead of password login. Do not repeat the approval request once it is granted.
 
 ## Scope
 
@@ -12,7 +12,7 @@ Work only in C:/AppServ/www/Workboard unless specifically asked. CRM_ERP_V4/docs
 
 ## Development rules
 
-- React/TypeScript/Tailwind UI and PHP/PDO/MySQL backend are proposed, pending plan approval.
+- React/TypeScript/Tailwind UI and PHP/PDO/MySQL backend are proposed, approved.
 - Preserve the compact Kanban-first UI and full-height right drawer; no oversized page introductions.
 - Required planned go-live date and actual release timestamp are separate fields.
 - Validate project membership and field visibility on every API request; external-viewer JSON is an allowlist projection.
