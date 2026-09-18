@@ -88,3 +88,10 @@ Data: migrated 5 projects, admin principal 1, 1 real meeting (+2 events) — SHA
 Backup: /etc/cron.d/workboard-backup 03:15 daily → /opt/backups/workboard (700/600, 14 days); first run verified.
 
 Waiting on: DNS A record `larksuite` → 187.77.127.28 (prima49.com uses nameservers aco1.vps-sun.com / aco2.vps-moon.com; the name currently resolves to 202.183.192.218). Then append deploy/Caddyfile.snippet to /opt/workspec/Caddyfile (backup first, append in place), `caddy validate` + `caddy reload`, and check HTTPS + a browser pass.
+
+## 2026-09-18 — live at https://larksuite.prima49.com
+
+DNS first had two A records (187.77.127.28 and 202.183.192.218, the latter created by the old hosting panel); after the user removed it the authoritative servers (serial 2026091802) return only the VPS. Backed up /opt/workspec/Caddyfile to Caddyfile.bak.20260918160720, validated a candidate inside the Caddy container, appended deploy/Caddyfile.snippet in place and ran `caddy reload`. Let's Encrypt certificate issued (valid to 2026-12-17, auto-renewed); http redirects to https (308).
+
+Checked: workjobs/meet/listen 200 and asr 401 before and after the reload (unchanged); /api/v1/session 200; /.env, /api/bootstrap.php, /deploy/.env, /docs/* 403; nosniff, DENY, no-referrer headers; browser load at 1440/375 with Kanit and no console or network errors. Rollback: remove the larksuite block from /opt/workspec/Caddyfile (or restore the .bak) and `caddy reload`; `docker compose down` in /opt/workboard/deploy.
+Next: user signs in with scratch/production-admin-link.txt and recreates member/viewer links on production.
