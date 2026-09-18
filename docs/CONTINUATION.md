@@ -74,5 +74,5 @@ Read-only SSH inspection: DEPLOYED_COMMIT=494acf2; workboard-app Up; workboard-d
 ## ล่าสุด: งานย่อย / ความคืบหน้า / Lark (local, ยังไม่ deploy)
 ดู TASKS.md หัวข้อ "18 ก.ย. รอบ 2" และ docs/TASK-GUIDE.md. Deploy ต้องทำ: push, git archive → /opt/workboard, รัน 005_viewable_links.sql ใน workboard-db, เพิ่ม LINK_KEY (ใหม่ ห้ามใช้ของ local) + LARK_MAIN_*/LARK_TEST_* ใน deploy/app.env, docker compose build app && up -d, แล้ว seal ลิงก์ผู้ชมเดิมด้วย scripts/seal-link.php (อ่านลิงก์จาก STDIN)
 
-## ล่าสุด: แก้ "ต้องกด F5" (local, ยังไม่ commit/deploy)
+## ล่าสุด: แก้ "ต้องกด F5" (deploy แล้ว 445c096)
 ดู TASKS.md "18 ก.ย. รอบ 3" และ WORKLOG ส่วนท้าย. ไฟล์: src/MeetingCalendar.tsx, src/meeting-state.ts (ใหม่), src/main.tsx, src/TaskDrawer.tsx, src/types.ts, api/task-updates.php, public/api/index.php, scripts/wb.mjs, tests/api.mjs, tests/meeting-state.mjs (ใหม่). ใน working tree ยังมีงาน backup ของรอบอื่น (deploy/backup.sh, deploy/workboard-backup.cron, HANDOFF) ที่ยังไม่ commit — แยก commit
