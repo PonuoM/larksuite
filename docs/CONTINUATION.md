@@ -76,3 +76,6 @@ Read-only SSH inspection: DEPLOYED_COMMIT=494acf2; workboard-app Up; workboard-d
 
 ## ล่าสุด: แก้ "ต้องกด F5" (deploy แล้ว 445c096)
 ดู TASKS.md "18 ก.ย. รอบ 3" และ WORKLOG ส่วนท้าย. ไฟล์: src/MeetingCalendar.tsx, src/meeting-state.ts (ใหม่), src/main.tsx, src/TaskDrawer.tsx, src/types.ts, api/task-updates.php, public/api/index.php, scripts/wb.mjs, tests/api.mjs, tests/meeting-state.mjs (ใหม่). ใน working tree ยังมีงาน backup ของรอบอื่น (deploy/backup.sh, deploy/workboard-backup.cron, HANDOFF) ที่ยังไม่ commit — แยก commit
+
+## ล่าสุด: คอลัมน์รอตัดสินใจ / รออนุมัติ (deploy แล้ว 9be01a2)
+สถานะ 5 = รอตัดสินใจ, 6 = รออนุมัติ (migration 006) · ผู้อนุมัติ = principals.can_approve ตั้งในหน้าการเข้าถึง · สมาชิก "CEO" ดูอย่างเดียว + อนุมัติ · บัญชี "Claude (AI) ร่างงาน" (editor) ใช้เขียนงานผ่าน API ลิงก์อยู่ scratch/claude-editor-link.txt · ถ้าประชุมขัดกันให้ยึดครั้งล่าสุด
