@@ -394,3 +394,27 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
   .topbar select[aria-label="มุมมอง"] { display: none; }
 }
 .status-3 { background: #3b5b92; }
+
+/* Phone board: list grouped by status (MobileBoard) */
+.mboard { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--paper); }
+.mboard-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+.mboard-head select { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 17px; font-weight: 600; color: var(--ink); padding: 4px 0; }
+.mboard-add { width: 40px; height: 40px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font-size: 22px; line-height: 1; }
+.mboard-logout { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 16px; }
+.mboard-search { margin: 10px 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 14px; }
+.mboard-chips { display: flex; gap: 6px; overflow-x: auto; padding: 10px 12px; scrollbar-width: none; }
+.mboard-chips::-webkit-scrollbar { display: none; }
+.mboard-chips button { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+.mboard-chips button b { font-weight: 500; color: var(--muted); margin-left: 2px; }
+.mboard-chips button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.mboard-chips button.on b { color: #fff; }
+.mboard-list { padding: 0 12px 16px; }
+.mboard-list h2 { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin: 12px 0 6px; color: var(--ink); }
+.mrow { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; display: grid; gap: 3px; cursor: pointer; }
+.mrow strong { font-size: 14px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.mrow-feature { color: var(--muted); font-size: 12px; }
+.mrow-blocked { color: var(--danger); font-size: 12px; margin: 2px 0 0; line-height: 1.5; }
+.mrow-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.mrow-meta .late { color: var(--danger); }
+.mrow .approve-tick { margin: 6px 0 0; }
+.mboard-empty { padding: 24px 12px; text-align: center; }

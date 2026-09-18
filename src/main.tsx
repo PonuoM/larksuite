@@ -5,6 +5,7 @@ import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task }
 import './index.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
+import MobileBoard from './MobileBoard';
 import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, approvable, decide, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
 type View = 'board' | 'overview' | 'calendar' | 'access';
@@ -40,6 +41,9 @@ function App() {
   const taskLoadSeq = useRef(0);
   // Board moves in flight, per task: a second move before the first returns would send a stale version (409).
   const [moving, setMoving] = useState<number[]>([]);
+  // Phones get the list layout of the board (MobileBoard); the breakpoint matches the CSS one (900 px).
+  const [isMobile, setIsMobile] = useState(() => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 900px)').matches);
+  useEffect(() => { const mq = matchMedia('(max-width: 900px)'); const on = () => setIsMobile(mq.matches); mq.addEventListener('change', on); return () => mq.removeEventListener('change', on); }, []);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [query, setQuery] = useState('');
   const [feature, setFeature] = useState('');
@@ -151,6 +155,11 @@ function App() {
     } finally { setMoving((m) => m.filter((id) => id !== task.id)); }
   }
 
+  function newTask() {
+    const p = project?.role !== 'viewer' && project ? project : writableProjects[0];
+    if (p) setSelected({ ...EMPTY_TASK, id: 0, project_id: p.id, version: 0, actual_released_at: null, updated_at: '' });
+  }
+
   async function approveTask(task: Task) {
     if (moving.includes(task.id)) return;
     setMoving((m) => [...m, task.id]);
@@ -201,8 +210,8 @@ function App() {
     </aside>
     <main className="workspace">
       {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} onProjectsChanged={loadProjects} onBack={() => setView('board')} /> : <>
-        <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={()=>{const p=project?.role!=='viewer'&&project?project:writableProjects[0];if(p)setSelected({...EMPTY_TASK,id:0,project_id:p.id,version:0,actual_released_at:null,updated_at:''});}}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>
-        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:<>
+        {!(isMobile && view === 'board') && <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={newTask}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>}
+        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:isMobile?(loadingTasks?<Empty title="กำลังโหลดงาน…" text=""/>:<MobileBoard tasks={visible} projects={projects} projectId={projectId} query={query} canApprove={!!session.user.can_approve} canCreate={editable} onProject={setProjectId} onQuery={setQuery} onOpen={setSelected} onNew={newTask} onApprove={approveTask} onLogout={logout} />):<>
         <div className="toolbar">
           <select aria-label="โปรเจกต์" value={projectId ?? 0} onChange={(e) => setProjectId(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <select aria-label="ฟังก์ชัน" value={feature} onChange={(e) => setFeature(e.target.value)}><option value="">ทุกฟังก์ชัน</option>{features.map((f) => <option key={f}>{f}</option>)}</select>
