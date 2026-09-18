@@ -1,5 +1,9 @@
 # ทำงานต่อจากตรงนี้
 
+## ล่าสุด — ปรับดีไซน์มือถือ (local, ยังไม่ deploy)
+ปรับ src/MobileBoard.tsx, src/main.tsx และเพิ่ม src/mobile-workspace.css โดยต่อจาก mobile list ของรอบก่อน: persistent controls, list/board toggle, scroll-snap columns, bottom navigation clearance, full-width drawers, larger inputs, visible archived-release filter. Build แล้วใน public/. ไม่มี API/schema change.
+ตรวจ Chromium ด้วย API fixtures (ไม่มีข้อมูล production) ที่ 320/375/414/768/1440 ผ่าน; script และภาพอยู่ scratch/ui-qa/. รูป mobile-375.png, board-414.png, drawer-375.png สำหรับเจ้าของตรวจดีไซน์. ยังไม่ commit/deploy และยังไม่ตรวจ keyboard/safe-area บนมือถือจริง.
+
 ## จุดต่อปัจจุบัน — 18 ก.ย. 2026 เวลา 19:44
 
 แก้ backup ด่วนจาก scratch/codex-handoff.md แล้ว: cron เรียก `/bin/sh /opt/workboard/deploy/backup.sh` เพราะไฟล์ใน Git เป็น 100644 และ execute โดยตรงไม่ได้ สำรอง cron เดิมไว้ `/opt/backups/workboard/cron-before-shell-fix-20260918` และติดตั้งจาก `deploy/workboard-backup.cron` แล้ว

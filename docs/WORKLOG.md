@@ -1,5 +1,12 @@
 # Work log
 
+## 2026-09-18 — mobile workspace design refinement
+
+Owner asked Codex to implement the mobile UX/UI. Current code already included MobileBoard and bottom tabs, so preserved those components and existing API/state/approval behavior. Added a dedicated mobile stylesheet using the existing paper/terracotta/Kanit design. Reworked the mobile list into grouped rows with task IDs, public summary, checklist counts and owner; added list/board toggle with horizontal snap columns, persistent search/status controls, all status filters including zero counts, and old-release visibility. Replaced nested interactive task rows with a native open button beside the approval action; approval now respects moving state.
+Fixed workspace height to reserve bottom-nav + safe-area space (prior workspace retained 100dvh beneath the nav). Mobile task/meeting drawers use full width, larger inputs and touch controls. Toasts appear above overlays so write errors remain visible.
+Checks actually run: node scripts/build.mjs (TypeScript + Vite), node tests/presentation.mjs, node tests/calendar-items.mjs, git diff --check. All passed. Playwright Chromium via scratch/ui-qa/check.mjs passed at 320/375/414/768/1440: root overflow, nav clearance, list/board toggle, search empty/reset, old releases, full-width drawer and navigation among board/overview/calendar/access. API calls intercepted with clearly fictional fixtures; no real DB or Lark mutations. Screenshots reviewed for list, board, drawer, tablet. First QA failure was duplicate fixture rows returned for both projects; corrected fixture routing and reran successfully. Initial drawer screenshot captured entry animation; waited for completion before visual review.
+Limitations: no actual phone/virtual-keyboard testing, no real API write tests in this design session, no deploy/commit. Owner preview next; deployment requires approval per handoff.
+
 ## 2026-09-18 — backup cron repair (19:44 +07)
 
 Resumed from scratch/codex-handoff.md; handled urgent backup failure first.

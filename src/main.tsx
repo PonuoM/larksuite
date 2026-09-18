@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { api, ApiError, setCsrf } from './api';
 import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task } from './types';
 import './index.css';
+import './mobile-workspace.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
 import MobileBoard from './MobileBoard';
@@ -211,7 +212,7 @@ function App() {
     <main className="workspace">
       {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} onProjectsChanged={loadProjects} onBack={() => setView('board')} /> : <>
         {!(isMobile && view === 'board') && <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={newTask}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>}
-        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:isMobile?(loadingTasks?<Empty title="กำลังโหลดงาน…" text=""/>:<MobileBoard tasks={visible} projects={projects} projectId={projectId} query={query} canApprove={!!session.user.can_approve} canCreate={editable} onProject={setProjectId} onQuery={setQuery} onOpen={setSelected} onNew={newTask} onApprove={approveTask} onLogout={logout} />):<>
+        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:isMobile?(loadingTasks?<Empty title="กำลังโหลดงาน…" text=""/>:<MobileBoard tasks={visible} projects={projects} projectId={projectId} query={query} canApprove={!!session.user.can_approve} canCreate={editable} showDone={showDone} onShowDone={setShowDone} moving={moving} onProject={setProjectId} onQuery={setQuery} onOpen={setSelected} onNew={newTask} onApprove={approveTask} onLogout={logout} />):<>
         <div className="toolbar">
           <select aria-label="โปรเจกต์" value={projectId ?? 0} onChange={(e) => setProjectId(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <select aria-label="ฟังก์ชัน" value={feature} onChange={(e) => setFeature(e.target.value)}><option value="">ทุกฟังก์ชัน</option>{features.map((f) => <option key={f}>{f}</option>)}</select>
@@ -227,7 +228,7 @@ function App() {
       {error && <div className="floating-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
     </main>
     <nav className="mobile-tabs" aria-label="เมนูหลัก">
-      {([['board', 'บอร์ด'], ['overview', 'ภาพรวม'], ['calendar', 'ปฏิทิน'], ...(session.user.is_admin ? [['access', 'การเข้าถึง']] : [])] as [View, string][]).map(([key, label]) =>
+      {([['board', 'งาน'], ['overview', 'ภาพรวม'], ['calendar', 'ปฏิทิน'], ...(session.user.is_admin ? [['access', 'การเข้าถึง']] : [])] as [View, string][]).map(([key, label]) =>
         <button key={key} className={view === key ? 'active' : ''} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}><Icon name={key === 'overview' ? 'report' : key} /><span>{label}</span></button>)}
     </nav>
     {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} canApprove={!!session.user.can_approve} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
