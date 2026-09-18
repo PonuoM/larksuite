@@ -1,6 +1,7 @@
 #!/bin/sh
 # Daily Workboard database dump, kept 14 days. Installed as /etc/cron.d/workboard-backup on the VPS.
 set -eu
+umask 077
 dir=/opt/backups/workboard
 mkdir -p "$dir"
 file="$dir/workboard-$(date +%F).sql.gz"
