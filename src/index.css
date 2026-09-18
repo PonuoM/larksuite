@@ -360,3 +360,6 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
 .generated-link button { padding: 0 12px; white-space: nowrap; }
 .add-check button { white-space: nowrap; padding: 0 12px; min-width: 56px; }
 .add-check input { min-width: 0; }
+.drawer-actions > .archive-confirm { flex: 1 1 100%; margin: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.drawer-actions > .archive-confirm p { flex: 1 1 260px; margin: 0; color: var(--danger); }
+.drawer-actions button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }

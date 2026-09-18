@@ -81,12 +81,14 @@ export default function TaskDrawer({ task, projects, editable, busy, larkTargets
           <Field label="หลักฐาน"><textarea rows={4} value={draft.evidence ?? ''} onChange={(e) => field('evidence', e.target.value)} placeholder="ลิงก์ commit / PR / หน้าจอ / ผลทดสอบ" /></Field>
         </>}
         {!isNew && <div className="read-only"><span>เปิดใช้จริง</span><strong>{formatDate(draft.actual_released_at)}</strong><span>แก้ไขล่าสุด</span><strong>{dateTime(draft.updated_at)}</strong></div>}
-        {confirmDelete && <div className="archive-confirm" role="alertdialog" aria-label="ยืนยันลบงาน"><p>ลบงาน “{draft.title}” ออกจากบอร์ด? (ประวัติยังเก็บไว้ กู้คืนได้โดยผู้ดูแลฐานข้อมูล)</p><button type="button" className="secondary" onClick={() => setConfirmDelete(false)}>ไม่ลบ</button><button type="button" className="danger" disabled={deleting} onClick={remove}>{deleting ? 'กำลังลบ…' : 'ยืนยันลบ'}</button></div>}
+        {/* The delete confirmation lives in the sticky action bar so it is visible however long the form is. */}
         {editable && <div className="drawer-actions">
-          {!isNew && <button type="button" className="danger-text" onClick={() => setConfirmDelete(true)}>ลบงาน</button>}
-          <NotifyPicker targets={larkTargets} value={notify} onChange={setNotify} />
-          {notify && <input className="notify-text" value={notifyText} onChange={(e) => setNotifyText(e.target.value)} placeholder="ข้อความถึงกลุ่ม (เว้นว่าง = สรุปสิ่งที่แก้)" aria-label="ข้อความถึงกลุ่ม Lark" />}
-          <button type="button" onClick={onClose}>ยกเลิก</button><button className="primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : isNew ? 'สร้างงาน' : notify ? 'บันทึก + แจ้ง' : 'บันทึก'}</button>
+          {confirmDelete ? <div className="archive-confirm" role="alertdialog" aria-label="ยืนยันลบงาน"><p>ลบงาน “{draft.title}” ออกจากบอร์ด? (ประวัติยังเก็บไว้ กู้คืนได้โดยผู้ดูแลฐานข้อมูล)</p><button type="button" className="secondary" onClick={() => setConfirmDelete(false)}>ไม่ลบ</button><button type="button" className="danger" disabled={deleting} onClick={remove}>{deleting ? 'กำลังลบ…' : 'ยืนยันลบ'}</button></div> : <>
+            {!isNew && <button type="button" className="danger-text" onClick={() => setConfirmDelete(true)}>ลบงาน</button>}
+            <NotifyPicker targets={larkTargets} value={notify} onChange={setNotify} />
+            {notify && <input className="notify-text" value={notifyText} onChange={(e) => setNotifyText(e.target.value)} placeholder="ข้อความถึงกลุ่ม (เว้นว่าง = สรุปสิ่งที่แก้)" aria-label="ข้อความถึงกลุ่ม Lark" />}
+            <button type="button" onClick={onClose}>ยกเลิก</button><button className="primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : isNew ? 'สร้างงาน' : notify ? 'บันทึก + แจ้ง' : 'บันทึก'}</button>
+          </>}
         </div>}
       </form>}
     </aside>
