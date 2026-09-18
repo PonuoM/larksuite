@@ -306,7 +306,7 @@ function AccessManager({ projects }: { projects: Project[] }) {
             {links.length > 0 && <ul className="link-list">{links.map((link) => <li key={link.id} className={link.revoked_at ? 'closed' : ''}>
               <span className="link-kind-badge">{link.reusable ? 'ลิงก์ถาวร' : 'ใช้ครั้งเดียว'}</span>
               <small>{linkState(link)}{link.current && ' · ลิงก์ที่คุณใช้อยู่'}</small>
-              {link.viewable && <button className="text-action" disabled={busy} onClick={() => showLink(link.id)}>{shown?.linkId === link.id ? 'ซ่อนลิงก์' : 'ดูลิงก์'}</button>}
+              {link.viewable && <button className="secondary link-show" disabled={busy} onClick={() => showLink(link.id)}>{shown?.linkId === link.id ? 'ซ่อนลิงก์' : 'ดู / คัดลอกลิงก์'}</button>}
               {!link.revoked_at && !link.current && !member.revoked_at && (link.reusable || !link.consumed_at) && (closing === link.id
                 ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => closeLink(link.id)}>ยืนยันปิด</button><button className="text-action" onClick={() => setClosing(0)}>ไม่ปิด</button></span>
                 : <button className="danger-text" onClick={() => setClosing(link.id)}>ปิดลิงก์</button>)}

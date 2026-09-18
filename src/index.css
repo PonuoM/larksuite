@@ -354,8 +354,8 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
 .report-waiting { font-size: 11px; margin-top: 10px; }
 .link-list li .generated-link { flex-basis: 100%; }
 .checklist .subtask-progress small { display: none; }
-.link-list li > button.text-action { margin-left: 0; }
-.link-list li > button.text-action ~ button, .link-list li > button.text-action ~ .confirm-close { margin-left: auto; }
+.link-list li > button.link-show { margin-left: 0; padding: 4px 10px; font-size: 12px; }
+.link-list li > button.link-show ~ button, .link-list li > button.link-show ~ .confirm-close { margin-left: auto; }
 .link-list li .generated-link { margin: 4px 0 8px; }
 .generated-link button { padding: 0 12px; white-space: nowrap; }
 .add-check button { white-space: nowrap; padding: 0 12px; min-width: 56px; }
