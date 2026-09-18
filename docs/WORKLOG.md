@@ -110,3 +110,13 @@ Owner decision: `planned_go_live_on` becomes optional. The team board kept in La
 
 Validation: calendar-items (new undated cases), report-format, presentation tests; tsc --noEmit; PHP lint; tests/api.mjs full run passed against the Vite+PHP dev setup with new checks (missing/null/'' go-live accepted as null, 2026-02-30 rejected). Import: 5 projects, 99 tasks (71 released / 19 รอเปิดใช้ / 9 กำลังทำ), 99 events, second run 0 new; admin session reads all 5 projects through the API.
 Not done: production — migration 004 and the import were NOT run on the VPS; `npm run build` not run (public/assets unchanged). Feature descriptions from Lark are not carried over (Workboard's feature is a plain name).
+
+## 2026-09-18 — deployed 494acf2 + imported the Lark Base board on production
+
+User asked for deploy + import. Pushed 494acf2. Production before: DEPLOYED_COMMIT 5c6c83a, projects named exactly Mini ERP / Voice Call / HR Connect / Dashboard / PrimaDesk, 0 tasks.
+- Backup first: /opt/backups/workboard/pre-004-20260918164501.sql.gz (root dump, 600).
+- `git archive` → /opt/workboard (DEPLOYED_COMMIT 494acf2); ran 004_optional_go_live.sql as root (IS_NULLABLE = YES); `docker compose build app && up -d app`.
+- Side effect: compose also recreated **workboard-db** because docker-compose.yml gained the 004 initdb mount (service config changed). Data volume untouched — after restart: 5 projects, 2 principals, 1 meeting, 2 links, as before. Brief DB downtime ~16:45. Next time: expect this whenever the db service block changes.
+- Import: copied scripts/import-lark-base.php + the backup JSON into workboard-app (the script is not in the image), dry run (0 projects, 99 tasks), then --apply, rerun = 0 new. Temporary copies removed from the container and /tmp.
+Result: 99 tasks (Mini ERP 47, Voice Call 17, HR Connect 16, Dashboard 11, PrimaDesk 8; 71 released / 19 รอเปิดใช้ / 9 กำลังทำ), all without go-live date, 99 `imported` events by principal 3 "นำเข้าจาก Lark Base". Site /api/v1/session and / return 200.
+Rollback (data): `gunzip -c /opt/backups/workboard/pre-004-20260918164501.sql.gz | docker exec -i workboard-db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" workboard'`.
