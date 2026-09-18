@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const STATUSES = ['รอทำ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
+const STATUSES = ['รอดำเนินการ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
 const FIELDS = ['title', 'feature', 'public_summary', 'scope', 'criteria', 'evidence', 'assignee', 'blocked_reason', 'planned_go_live_on'];
 const HELP = `Workboard CLI — node scripts/wb.mjs <command> [...]
 
@@ -29,8 +29,8 @@ const HELP = `Workboard CLI — node scripts/wb.mjs <command> [...]
   sub-undo TASK SUBID                      เปิดงานย่อยใหม่
   sub-note TASK SUBID "โน้ต"
   sub-rm TASK SUBID
-  status TASK 0-6                          ย้ายสถานะ (5 รอตัดสินใจ · 0 รอทำ · 1 กำลังทำ · 2 รอทดสอบ · 6 รออนุมัติ · 3 รอเปิดใช้ · 4 เปิดใช้งานแล้ว)
-                                           งานใน 6 รออนุมัติ ไปต่อได้เมื่อผู้อนุมัติกดในหน้าเว็บเท่านั้น
+  status TASK 0-6                          ย้ายสถานะ (6 รออนุมัติ · 5 รอตัดสินใจ · 0 รอดำเนินการ · 1 กำลังทำ · 2 รอทดสอบ · 3 รอเปิดใช้ · 4 เปิดใช้งานแล้ว)
+                                           งานใหญ่กระทบทั้งระบบเริ่มที่ 6 · แก้บั๊ก/ข้อมูลเริ่มที่ 0 · งานใน 6 เริ่มได้เมื่อผู้อนุมัติกดอนุมัติเท่านั้น
   set TASK field=value [field=@file.md ...]
                                            แก้ฟิลด์: ${FIELDS.join(', ')}
   create PROJECT "ชื่องาน" [field=value ...] [--sub "งานย่อย"]...

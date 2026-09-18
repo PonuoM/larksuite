@@ -8,7 +8,7 @@ function meetingData(array $d): array {
 }
 function meetingDto(array $m,string $role,bool $detail=false): array {
  $out=['id'=>(int)$m['id'],'project_id'=>(int)$m['project_id'],'title'=>$m['title'],'meeting_on'=>$m['meeting_on'],'published'=>(bool)$m['published'],'version'=>(int)$m['version'],'updated_at'=>$m['updated_at']];
- if($detail){$out['content']=$m['content'];if($role!=='viewer')$out['participants']=$m['participants'];}
+ if($detail){$out['content']=$m['content'];if(!isReadOnly($role))$out['participants']=$m['participants'];}
  return $out;
 }
 function meetingRoutes(string $route,string $method,array $u): void {
@@ -18,7 +18,7 @@ function meetingRoutes(string $route,string $method,array $u): void {
    $month=$_GET['month']??gmdate('Y-m');$date=is_string($month)?DateTime::createFromFormat('!Y-m',$month):false;
    if(!$date||$date->format('Y-m')!==$month)reply(422,'เดือนไม่ถูกต้อง');
    $end=(clone $date)->modify('+1 month')->format('Y-m-d');$cursor=max(0,(int)($_GET['cursor']??0));
-   $rows=query('SELECT id,project_id,title,meeting_on,published,version,updated_at FROM meetings WHERE project_id=? AND archived=0 AND meeting_on>=? AND meeting_on<? AND id>? AND (?=1 OR published=1) ORDER BY id LIMIT 101',[$project,$date->format('Y-m-d'),$end,$cursor,$role==='viewer'?0:1])->fetchAll();
+   $rows=query('SELECT id,project_id,title,meeting_on,published,version,updated_at FROM meetings WHERE project_id=? AND archived=0 AND meeting_on>=? AND meeting_on<? AND id>? AND (?=1 OR published=1) ORDER BY id LIMIT 101',[$project,$date->format('Y-m-d'),$end,$cursor,isReadOnly($role)?0:1])->fetchAll();
    $more=count($rows)>100;if($more)array_pop($rows);
    reply(200,'รายงานประชุม',['items'=>array_map(function($m)use($role){return meetingDto($m,$role);},$rows),'next_cursor'=>$more?(int)end($rows)['id']:null]);
   }
@@ -31,7 +31,7 @@ function meetingRoutes(string $route,string $method,array $u): void {
  }
  if(preg_match('~^/meetings/(\d+)$~',$route,$match)) {
   $id=(int)$match[1];$m=query('SELECT * FROM meetings WHERE id=? AND archived=0',[$id])->fetch();if(!$m)reply(404,'ไม่พบรายงานประชุม');$role=roleFor($u,(int)$m['project_id']);
-  if($role==='viewer'&&!$m['published'])reply(404,'ไม่พบรายงานประชุม');
+  if(isReadOnly($role)&&!$m['published'])reply(404,'ไม่พบรายงานประชุม');
   if($method==='GET')reply(200,'รายงานประชุม',meetingDto($m,$role,true));
   if($method==='PATCH'||$method==='DELETE') {
    editable($role);$body=body();if(!is_int($body['version']??null))reply(422,'ต้องระบุ version');$d=$method==='PATCH'?meetingData($body):null;db()->beginTransaction();

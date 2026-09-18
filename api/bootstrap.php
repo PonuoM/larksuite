@@ -1,10 +1,14 @@
 <?php
 declare(strict_types=1);
 date_default_timezone_set('UTC');
-// Status codes are stable ids; 5 and 6 were appended by migration 006. The board orders them by workflow:
-// รอตัดสินใจ(5) → รอทำ(0) → กำลังทำ(1) → รอทดสอบ(2) → รออนุมัติ(6) → รอเปิดใช้(3) → เปิดใช้งานแล้ว(4).
-const TASK_STATUSES = ['รอทำ','กำลังทำ','รอทดสอบ','รอเปิดใช้','เปิดใช้งานแล้ว','รอตัดสินใจ','รออนุมัติ'];
+// Status codes are stable ids; 5 and 6 were appended by migration 006. Board order (owner, 2026-09-18):
+// รออนุมัติ(6) → รอตัดสินใจ(5) → รอดำเนินการ(0) → กำลังทำ(1) → รอทดสอบ(2) → รอเปิดใช้(3) → เปิดใช้งานแล้ว(4).
+// Big, system-wide work (anything the telesales team must be told about) starts in รออนุมัติ; bug and data fixes
+// start in รอดำเนินการ. Approvers (e.g. the CEO) comment on and approve 6 and 5; approval moves the task to 0.
+const TASK_STATUSES = ['รอดำเนินการ','กำลังทำ','รอทดสอบ','รอเปิดใช้','เปิดใช้งานแล้ว','รอตัดสินใจ','รออนุมัติ'];
 const STATUS_AWAITING_APPROVAL = 6;
+const STATUS_AWAITING_DECISION = 5;
+const APPROVABLE_STATUSES = [5,6];
 function config(): array {
     static $config;
     if ($config === null) {
@@ -88,9 +92,11 @@ function roleFor(array $u,int $project): string {
     if ($u['is_admin']) return 'admin';
     $role=query('SELECT role FROM memberships WHERE principal_id=? AND project_id=?',[$u['id'],$project])->fetchColumn();
     if (!$role) reply(404,'ไม่พบโปรเจกต์');
-    return $role;
+    // A view-only approver (the CEO) reads everything the team reads and may comment/approve, but not edit.
+    return $role==='viewer'&&(int)$u['can_approve']?'reviewer':$role;
 }
-function editable(string $role): void {if ($role==='viewer') reply(403,'ลิงก์นี้ดูข้อมูลได้อย่างเดียว');}
+function isReadOnly(string $role): bool {return $role==='viewer'||$role==='reviewer';}
+function editable(string $role): void {if (isReadOnly($role)) reply(403,'ลิงก์นี้ดูข้อมูลได้อย่างเดียว');}
 // Sub-tasks live in tasks.checklist as JSON [{id,label,done,note,done_at}]. Items saved before ids existed get a
 // stable positional id ("i0", "i1", …) until the task is next written.
 function checklistItems(string $json): array {

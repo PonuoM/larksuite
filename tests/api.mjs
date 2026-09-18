@@ -179,29 +179,41 @@ try {
   const archived = await call(editor, `/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ version: current }) });
   if (archived.status !== 200) throw new Error('archive failed');
 
-  // Columns รอตัดสินใจ (5) and รออนุมัติ (6): only a person with the approver right moves 6 on to release.
-  const approvalTask = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 5 }) });
-  if (approvalTask.status !== 201 || approvalTask.payload.data.status !== 5) throw new Error('status 5 rejected: ' + JSON.stringify(approvalTask));
+  // Flow (owner 2026-09-18): รออนุมัติ(6) → รอตัดสินใจ(5) → รอดำเนินการ(0) … Approvers (even view-only) comment and approve 6/5.
+  const approvalTask = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 6 }) });
+  if (approvalTask.status !== 201 || approvalTask.payload.data.status !== 6) throw new Error('status 6 rejected: ' + JSON.stringify(approvalTask));
   const approvalId = approvalTask.payload.data.id;
   try {
     if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, status: 7 }) })).status !== 422) throw new Error('status 7 accepted');
-    const toApproval = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 6, version: approvalTask.payload.data.version }) });
-    if (toApproval.status !== 200 || toApproval.payload.data.status !== 6 || toApproval.payload.data.approved_at !== null) throw new Error('move to รออนุมัติ failed');
-    const skip = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 3, version: toApproval.payload.data.version }) });
-    if (skip.status !== 403) throw new Error('editor moved an unapproved task to release: ' + skip.status);
+    const skip = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 1, version: approvalTask.payload.data.version }) });
+    if (skip.status !== 403) throw new Error('editor started an unapproved task: ' + skip.status);
+    const toDecision = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 5, version: approvalTask.payload.data.version }) });
+    if (toDecision.status !== 200) throw new Error('editor could not move รออนุมัติ → รอตัดสินใจ');
+    const back6 = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 6, version: toDecision.payload.data.version }) });
     if ((await call(editor, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'approve' }) })).status !== 403) throw new Error('non-approver approved');
+    // Plain viewer: no history, no comments, limited fields.
+    if ((await call(viewer, `/tasks/${approvalId}/events`)).status !== 403) throw new Error('viewer read history');
+    if ((await call(viewer, `/tasks/${approvalId}/notes`, { method: 'POST', body: JSON.stringify({ text: 'x' }) })).status !== 403) throw new Error('viewer commented');
     if ((await call(admin, `/access/${viewer.id}/approver`, { method: 'POST', body: JSON.stringify({ can_approve: true }) })).status !== 200) throw new Error('grant approver failed');
     if ((await call(viewer, '/session')).payload.data.user.can_approve !== true) throw new Error('session does not report can_approve');
+    // View-only approver (CEO): full details, history, comments; still cannot edit or notify Lark.
+    const full = (await call(viewer, `/tasks/${approvalId}`)).payload.data;
+    if (!('scope' in full) || !('criteria' in full)) throw new Error('approver does not see full details');
+    if ((await call(viewer, `/tasks/${approvalId}/events`)).status !== 200) throw new Error('approver cannot read history');
+    if ((await call(viewer, `/tasks/${approvalId}/notes`, { method: 'POST', body: JSON.stringify({ text: 'ไอเดีย: ทำหน้าเทียบก่อน-หลัง' }) })).status !== 201) throw new Error('approver cannot comment');
+    if ((await call(viewer, `/tasks/${approvalId}/notes`, { method: 'POST', body: JSON.stringify({ text: 'x', notify: 'test' }) })).status !== 403) throw new Error('approver notified Lark');
+    if ((await call(viewer, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 0, version: back6.payload.data.version }) })).status !== 403) throw new Error('approver edited a task');
     if ((await call(viewer, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'reject' }) })).status !== 422) throw new Error('reject without a reason accepted');
+    const rejected = await call(viewer, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'reject', note: 'ขอแผนสื่อสารกับทีมเทเลก่อน' }) });
+    if (rejected.status !== 200 || rejected.payload.data.status !== 5) throw new Error('reject did not move to รอตัดสินใจ');
+    if ((await call(viewer, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'reject', note: 'x' }) })).status !== 409) throw new Error('rejected from รอตัดสินใจ');
     const approved = await call(viewer, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'approve', note: 'ok' }) });
-    if (approved.status !== 200 || approved.payload.data.status !== 3 || !approved.payload.data.approved_at) throw new Error('view-only approver could not approve: ' + JSON.stringify(approved));
+    if (approved.status !== 200 || approved.payload.data.status !== 0 || !approved.payload.data.approved_at) throw new Error('approve from รอตัดสินใจ failed: ' + JSON.stringify(approved));
     if ((await call(viewer, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'approve' }) })).status !== 409) throw new Error('approved twice');
-    const back = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 6, version: approved.payload.data.version }) });
-    if (back.payload.data.approved_at !== null) throw new Error('re-entering รออนุมัติ kept the old approval');
-    const rejected = await call(viewer, `/tasks/${approvalId}/approve`, { method: 'POST', body: JSON.stringify({ decision: 'reject', note: 'ยังขาดหลักฐาน' }) });
-    if (rejected.status !== 200 || rejected.payload.data.status !== 1) throw new Error('reject did not send the task back');
+    const again = await call(editor, `/tasks/${approvalId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'API approval ' + marker, status: 6, version: approved.payload.data.version }) });
+    if (again.payload.data.approved_at !== null) throw new Error('re-entering รออนุมัติ kept the old approval');
     const acts = (await call(editor, `/tasks/${approvalId}/events`)).payload.data.map((e) => e.action);
-    if (!acts.includes('approved') || !acts.includes('rejected')) throw new Error('approval not in history');
+    if (!acts.includes('approved') || !acts.includes('rejected') || !acts.includes('note')) throw new Error('approval/comment not in history');
   } finally { await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(approvalId)};`); }
 
   const projectList = await call(admin, '/projects');
@@ -299,7 +311,7 @@ try {
   if(eventCount!==3)throw new Error('meeting audit event count incorrect');
   if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
   if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'decision + approval columns'] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'approval flow 6→5→0 + CEO comments'] }, null, 2));
 } finally {
   if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
   const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');

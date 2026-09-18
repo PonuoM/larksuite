@@ -5,7 +5,7 @@ import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task }
 import './index.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
-import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, AWAITING_APPROVAL, decide, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
+import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, approvable, decide, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
 type View = 'board' | 'overview' | 'calendar' | 'access';
 // Everyone lands on the board. Old ?view=report links open the merged overview/report page.
@@ -151,7 +151,7 @@ function App() {
       const saved = await decide(task.id, 'approve');
       taskLoadSeq.current++;
       setTasks((current) => current.map((t) => t.id === saved.id ? saved : t));
-      setNotice(`อนุมัติ “${saved.title}” แล้ว ย้ายไป “รอเปิดใช้”`);
+      setNotice(`อนุมัติ “${saved.title}” แล้ว ย้ายไป “รอดำเนินการ”`);
     } catch (e) {
       setError(message(e));
       if (e instanceof ApiError && e.status === 409) await loadTasks();
@@ -210,6 +210,10 @@ function App() {
       {notice && !error && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {error && <div className="floating-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
     </main>
+    <nav className="mobile-tabs" aria-label="เมนูหลัก">
+      {([['board', 'บอร์ด'], ['overview', 'ภาพรวม'], ['calendar', 'ปฏิทิน'], ...(session.user.is_admin ? [['access', 'การเข้าถึง']] : [])] as [View, string][]).map(([key, label]) =>
+        <button key={key} className={view === key ? 'active' : ''} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}><Icon name={key === 'overview' ? 'report' : key} /><span>{label}</span></button>)}
+    </nav>
     {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} canApprove={!!session.user.can_approve} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
   </div>;
 }
@@ -230,7 +234,7 @@ function Board({ tasks, projects, canEdit, canApprove, onApprove, onOpen, onMove
             <ProgressBar list={task.checklist} />
             {task.blocked_reason && <p className="blocked">! {task.blocked_reason}</p>}
             <div className={`deadline ${task.status !== 4 && task.planned_go_live_on && task.planned_go_live_on < new Date().toISOString().slice(0, 10) ? 'overdue' : ''}`}>▣ {task.planned_go_live_on ? `เริ่มใช้ ${formatDate(task.planned_go_live_on)}` : 'ยังไม่กำหนดวันเริ่มใช้'}</div>
-            {task.status === AWAITING_APPROVAL && canApprove && <button type="button" className="approve-tick" onClick={(e) => { e.stopPropagation(); onApprove(task); }} onKeyDown={(e) => e.stopPropagation()} aria-label={'อนุมัติ ' + task.title}>✓ อนุมัติ</button>}
+            {approvable(task.status) && canApprove && <button type="button" className="approve-tick" onClick={(e) => { e.stopPropagation(); onApprove(task); }} onKeyDown={(e) => e.stopPropagation()} aria-label={'อนุมัติ ' + task.title}>✓ อนุมัติ</button>}
             <footer><span>{task.assignee || 'ยังไม่ระบุผู้รับผิดชอบ'}</span><span>#{String(task.id).padStart(3, '0')}</span></footer>
           </article>)}
           {!items.length && <div className="drop-empty">ลากงานมาวางที่นี่</div>}

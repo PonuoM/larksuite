@@ -21,12 +21,13 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
  const groupsFor=(pt:Task[])=>[
   {label:'ส่งมอบในสัปดาห์นี้',items:pt.filter(released),tone:'good'},
   {label:'กำลังทำ',items:pt.filter(t=>t.status===1&&!t.blocked_reason),tone:''},
-  {label:'รอทดสอบ / รออนุมัติ / รอเปิดใช้',items:pt.filter(t=>(t.status===2||t.status===6||t.status===3)&&!t.blocked_reason),tone:''},
+  {label:'รอทดสอบ / รอเปิดใช้',items:pt.filter(t=>(t.status===2||t.status===3)&&!t.blocked_reason),tone:''},
+  {label:'รออนุมัติ',items:pt.filter(t=>t.status===6&&!t.blocked_reason),tone:''},
   {label:'รอข้อสรุป / รอตัดสินใจ',items:pt.filter(needsDecision),tone:'accent'},
  ];
  function download() {
   const lines=['# รายงานสัปดาห์',dateLabel(start)+' – '+dateLabel(end),''];
-  for(const p of shownProjects) {lines.push('## '+p.name);const pt=scoped.filter(t=>t.project_id===p.id);for(const group of groupsFor(pt)){if(group.items.length){lines.push('### '+group.label);for(const t of group.items)lines.push('- ['+statuses[t.status]+'] '+t.title+sub(t)+' · '+(t.planned_go_live_on?'กำหนดเริ่มใช้ '+t.planned_go_live_on:'ยังไม่กำหนดวันเริ่มใช้')+(t.blocked_reason?' · '+t.blocked_reason:''));}}const waiting=pt.filter(t=>t.status===0&&!t.blocked_reason).length;if(waiting)lines.push('รอเริ่ม '+waiting+' งาน');lines.push('');}
+  for(const p of shownProjects) {lines.push('## '+p.name);const pt=scoped.filter(t=>t.project_id===p.id);for(const group of groupsFor(pt)){if(group.items.length){lines.push('### '+group.label);for(const t of group.items)lines.push('- ['+statuses[t.status]+'] '+t.title+sub(t)+' · '+(t.planned_go_live_on?'กำหนดเริ่มใช้ '+t.planned_go_live_on:'ยังไม่กำหนดวันเริ่มใช้')+(t.blocked_reason?' · '+t.blocked_reason:''));}}const waiting=pt.filter(t=>t.status===0&&!t.blocked_reason).length;if(waiting)lines.push('รอดำเนินการ '+waiting+' งาน');lines.push('');}
   const url=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='workboard-'+start+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  return <><div className="toolbar"><select aria-label="โปรเจกต์ในรายงาน" value={projectId??0} onChange={e=>onProject(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="วันที่ในสัปดาห์" type="date" value={week} onChange={e=>e.target.value&&setWeek(e.target.value)}/><span className="period-label">{dateLabel(start)} – {dateLabel(end)}</span><button className="primary toolbar-end" onClick={download}>ดาวน์โหลดสรุป</button></div>
@@ -36,7 +37,7 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
    {shownProjects.map(p=>{const pt=scoped.filter(t=>t.project_id===p.id);const groups=groupsFor(pt);const waiting=pt.filter(t=>t.status===0&&!t.blocked_reason).length;
     return <section className="project-report" key={p.id}><div><button className="project-title" onClick={()=>onProject(p.id,true)}>{p.name} ↗</button><p>{p.description}</p><p className="project-counts">{STATUS_ORDER.map(i=><span key={i}>{statuses[i]} <b>{pt.filter(t=>t.status===i).length}</b></span>)}</p></div>
      <div>{groups.filter(g=>g.items.length).map(g=><section className="report-group" key={g.label}><h3 className={g.tone}>{g.label}</h3>{g.items.map(t=><button className="report-task" key={t.id} onClick={()=>onOpen(t)}><span>—</span><span>{t.title}{sub(t)&&<em className="report-sub">{sub(t)}</em>}{t.blocked_reason&&<small>{t.blocked_reason}</small>}</span></button>)}</section>)}
-      {waiting>0&&<p className="muted report-waiting">รอเริ่ม {waiting} งาน · <button className="text-action" onClick={()=>onProject(p.id,true)}>ดูในบอร์ด</button></p>}
+      {waiting>0&&<p className="muted report-waiting">รอดำเนินการ {waiting} งาน · <button className="text-action" onClick={()=>onProject(p.id,true)}>ดูในบอร์ด</button></p>}
       {groups.every(g=>!g.items.length)&&!waiting&&<p className="muted">ไม่มีรายการในช่วงนี้</p>}</div></section>})}
   </div>
   <aside className="overview-aside">{awaitingApproval.length>0&&<><h2>รออนุมัติ <small>{awaitingApproval.length}</small></h2>{awaitingApproval.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2></button>)}</>}<h2>ต้องการข้อสรุป</h2>{blockers.length?blockers.map(t=><button className="task-card" key={t.id} onClick={()=>onOpen(t)}><small>{projects.find(p=>p.id===t.project_id)?.name}</small><h2>{t.title}</h2><p className="blocked">{t.blocked_reason||'อยู่ในคอลัมน์ “รอตัดสินใจ”'}</p></button>):<p className="muted">ไม่มีเรื่องติดขัดในข้อมูลที่คุณเข้าถึงได้</p>}</aside></div>

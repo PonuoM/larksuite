@@ -107,13 +107,13 @@ try {
  }
  if(preg_match('~^/tasks/(\d+)(/events)?$~',$route,$m)) {
     $id=(int)$m[1];$t=query('SELECT * FROM tasks WHERE id=? AND archived=0',[$id])->fetch();if(!$t)reply(404,'ไม่พบงาน');$role=roleFor($u,(int)$t['project_id']);
-    if(!empty($m[2])) {editable($role);if($method!=='GET')reply(405,'วิธีเรียกไม่ถูกต้อง');$cursor=max(0,(int)($_GET['before']??PHP_INT_MAX));reply(200,'ประวัติ',query('SELECT e.id,e.action,e.payload,e.created_at,p.label AS actor FROM task_events e JOIN principals p ON p.id=e.principal_id WHERE e.task_id=? AND e.id<? ORDER BY e.id DESC LIMIT 50',[$id,$cursor])->fetchAll());}
+    if(!empty($m[2])) {if($role==='viewer')editable($role);if($method!=='GET')reply(405,'วิธีเรียกไม่ถูกต้อง');$cursor=max(0,(int)($_GET['before']??PHP_INT_MAX));reply(200,'ประวัติ',query('SELECT e.id,e.action,e.payload,e.created_at,p.label AS actor FROM task_events e JOIN principals p ON p.id=e.principal_id WHERE e.task_id=? AND e.id<? ORDER BY e.id DESC LIMIT 50',[$id,$cursor])->fetchAll());}
     if($method==='GET')reply(200,'รายละเอียด',taskDto($t,$role));
     if($method==='PATCH'||$method==='DELETE') {
        editable($role);$data=body();if(!isset($data['version'])||!is_int($data['version']))reply(422,'ต้องระบุ version');
        $target=notifyTarget($data);$d=$method==='PATCH'?taskData($data):null;
-       // A task waiting for approval only moves on to release through POST /tasks/{id}/approve.
-       if($d&&(int)$t['status']===STATUS_AWAITING_APPROVAL&&in_array($d['status'],[3,4],true))reply(403,'งานนี้รออนุมัติ ต้องให้ผู้อนุมัติกด "อนุมัติ" ก่อน');
+       // Work in รออนุมัติ starts only through POST /tasks/{id}/approve (or by an approver); it may step back to รอตัดสินใจ.
+       if($d&&(int)$t['status']===STATUS_AWAITING_APPROVAL&&!in_array($d['status'],[STATUS_AWAITING_APPROVAL,STATUS_AWAITING_DECISION],true)&&!(int)$u['can_approve'])reply(403,'งานนี้รออนุมัติ ต้องให้ผู้อนุมัติกด "อนุมัติ" ก่อนเริ่มทำ');
        db()->beginTransaction();
        if($method==='DELETE')$stmt=query('UPDATE tasks SET archived=1,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$id,$data['version']]);
        else $stmt=query('UPDATE tasks SET title=?,feature=?,public_summary=?,scope=?,criteria=?,evidence=?,assignee=?,blocked_reason=?,checklist=?,status=?,planned_go_live_on=?,actual_released_at=?,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=? AND version=? AND archived=0',[$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?($t['actual_released_at']?:gmdate('Y-m-d H:i:s')):null,$id,$data['version']]);

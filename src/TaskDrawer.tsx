@@ -3,10 +3,13 @@ import { api } from './api';
 import type { ChecklistItem, LarkTarget, Project, Task, TaskEvent } from './types';
 
 // Index = status code stored in the database (5 and 6 appended by migration 006).
-export const STATUSES = ['รอทำ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
-// Column order on the board and in pickers: decide → do → test → approve → release.
-export const STATUS_ORDER = [5, 0, 1, 2, 6, 3, 4];
+export const STATUSES = ['รอดำเนินการ', 'กำลังทำ', 'รอทดสอบ', 'รอเปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
+// Column order (owner, 2026-09-18): big system-wide work starts in รออนุมัติ, the approver (CEO) settles it there or in
+// รอตัดสินใจ, and approval hands it to the developers in รอดำเนินการ. Bug and data fixes start in รอดำเนินการ.
+export const STATUS_ORDER = [6, 5, 0, 1, 2, 3, 4];
 export const AWAITING_APPROVAL = 6;
+export const AWAITING_DECISION = 5;
+export const approvable = (status: number) => status === AWAITING_APPROVAL || status === AWAITING_DECISION;
 export const EMPTY_TASK: Omit<Task, 'id' | 'project_id' | 'updated_at' | 'version' | 'actual_released_at'> = {
   title: '', feature: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '',
   blocked_reason: '', checklist: [], status: 0, planned_go_live_on: '', archived: 0,
@@ -68,16 +71,16 @@ export default function TaskDrawer({ task, projects, editable, canApprove, busy,
   return <div className="drawer-layer" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
     <aside className="drawer" aria-label="รายละเอียดงาน">
       <header><div><small>{isNew ? 'งานใหม่' : `#${String(task.id).padStart(3, '0')} · ${projects.find((p) => p.id === task.project_id)?.name ?? ''}`}</small><h1>{draft.title || 'ตั้งชื่องาน'}</h1></div><button className="icon-button" onClick={onClose} aria-label="ปิด">×</button></header>
-      {!isNew && editable && <div className="drawer-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>รายละเอียด</button><button className={tab === 'progress' ? 'active' : ''} onClick={() => setTab('progress')}>ความคืบหน้า / ประวัติ</button></div>}
-      {tab === 'progress' ? <ProgressTab task={draft} larkTargets={larkTargets} onError={onError} onNotice={onNotice} /> : <form className="drawer-body" onSubmit={(e) => { e.preventDefault(); onSave(isNew ? { ...EMPTY_TASK, ...draft } as Task : draft, notify, notifyText); }}>
-        {canApprove && !isNew && draft.status === AWAITING_APPROVAL && <ApprovalPanel task={draft} onDone={(saved) => { onChanged(saved); onNotice(saved.status === 3 ? 'อนุมัติแล้ว ย้ายไป “รอเปิดใช้”' : 'ไม่อนุมัติ ส่งกลับไป “กำลังทำ”'); onClose(); }} onError={onError} />}
+      {!isNew && (editable || canApprove) && <div className="drawer-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>รายละเอียด</button><button className={tab === 'progress' ? 'active' : ''} onClick={() => setTab('progress')}>ความคืบหน้า / ประวัติ</button></div>}
+      {tab === 'progress' ? <ProgressTab task={draft} larkTargets={editable ? larkTargets : []} commentOnly={!editable} onError={onError} onNotice={onNotice} /> : <form className="drawer-body" onSubmit={(e) => { e.preventDefault(); onSave(isNew ? { ...EMPTY_TASK, ...draft } as Task : draft, notify, notifyText); }}>
+        {canApprove && !isNew && approvable(draft.status) && <ApprovalPanel task={draft} onComment={() => setTab('progress')} onDone={(saved) => { onChanged(saved); onNotice(saved.status === 0 ? 'อนุมัติแล้ว ย้ายไป “รอดำเนินการ”' : 'ไม่อนุมัติ ย้ายไป “รอตัดสินใจ”'); onClose(); }} onError={onError} />}
         {editable ? <>
           <Field label="โปรเจกต์"><select value={draft.project_id} disabled={!isNew} onChange={(e) => field('project_id', Number(e.target.value))}>{projects.filter((p) => p.id === draft.project_id || p.role !== 'viewer').map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="ชื่องาน"><input required value={draft.title} onChange={(e) => field('title', e.target.value)} placeholder="สิ่งที่จะได้เมื่อเสร็จ เช่น หน้าโทรออกแบบใหม่สำหรับทีมเทเล" /></Field>
-          <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUS_ORDER.map((i) => <option key={i} value={i} disabled={i !== draft.status && task.status === AWAITING_APPROVAL && (i === 3 || i === 4)}>{STATUSES[i]}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
+          <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUS_ORDER.map((i) => <option key={i} value={i} disabled={i !== draft.status && task.status === AWAITING_APPROVAL && !canApprove && !approvable(i)}>{STATUSES[i]}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
           <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} /></Field></div>
           <Field label="สรุปสำหรับผู้ชมภายนอก"><textarea rows={3} value={draft.public_summary} onChange={(e) => field('public_summary', e.target.value)} placeholder="1–2 ประโยคที่คนนอกทีมอ่านแล้วเข้าใจ: ทำอะไร เพื่อใคร ตอนนี้ถึงไหน" /></Field>
-        </> : <ViewerSummary task={draft} projects={projects} />}
+        </> : <><ViewerSummary task={draft} projects={projects} />{canApprove && <ReadOnlyDetails task={draft} />}</>}
         <Subtasks task={draft} editable={editable} onLocal={(list) => field('checklist', list)} onApplied={applied} onError={onError} />
         {editable && <>
           <TemplateField label="รายละเอียดและขอบเขตงาน" rows={8} value={draft.scope ?? ''} template={SCOPE_TEMPLATE} onChange={(v) => field('scope', v)} />
@@ -105,7 +108,7 @@ export default function TaskDrawer({ task, projects, editable, canApprove, busy,
 export async function decide(taskId: number, decision: 'approve' | 'reject', note = '') {
   return api<Task>(`/tasks/${taskId}/approve`, { method: 'POST', body: JSON.stringify({ decision, note }) });
 }
-function ApprovalPanel({ task, onDone, onError }: { task: Task; onDone: (t: Task) => void; onError: (s: string) => void }) {
+function ApprovalPanel({ task, onDone, onComment, onError }: { task: Task; onDone: (t: Task) => void; onComment: () => void; onError: (s: string) => void }) {
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -114,15 +117,22 @@ function ApprovalPanel({ task, onDone, onError }: { task: Task; onDone: (t: Task
     try { onDone(await decide(task.id, decision, note)); } catch (e) { onError(message(e)); } finally { setBusy(false); }
   }
   return <section className="approval-panel" aria-label="อนุมัติงาน">
-    <strong>งานนี้รอคุณอนุมัติ</strong>
-    <p>ตรวจรายละเอียด งานย่อย และหลักฐานด้านล่าง ถ้าโอเคกดอนุมัติ งานจะย้ายไป “รอเปิดใช้”</p>
+    <strong>{task.status === AWAITING_APPROVAL ? 'งานนี้รอคุณอนุมัติ' : 'งานนี้รอการตัดสินใจ'}</strong>
+    <p>ตรวจรายละเอียดด้านล่าง ถ้าโอเคกดอนุมัติ งานจะไป “รอดำเนินการ” ให้ทีมเริ่มทำ · มีไอเดียเพิ่มหรือคำถาม กด “แสดงความเห็น”</p>
     {rejecting && <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="เหตุผลที่ไม่อนุมัติ / สิ่งที่ต้องแก้" aria-label="เหตุผลที่ไม่อนุมัติ" />}
     <div className="approval-actions">
       {rejecting
-        ? <><button type="button" className="secondary" onClick={() => setRejecting(false)}>กลับ</button><button type="button" className="danger" disabled={busy || !note.trim()} onClick={() => run('reject')}>ส่งกลับไปแก้</button></>
-        : <><button type="button" className="secondary" onClick={() => setRejecting(true)}>ไม่อนุมัติ</button><button type="button" className="primary" disabled={busy} onClick={() => run('approve')}>{busy ? 'กำลังบันทึก…' : '✓ อนุมัติ'}</button></>}
+        ? <><button type="button" className="secondary" onClick={() => setRejecting(false)}>กลับ</button><button type="button" className="danger" disabled={busy || !note.trim()} onClick={() => run('reject')}>ย้ายไปรอตัดสินใจ</button></>
+        : <><button type="button" className="secondary" onClick={onComment}>แสดงความเห็น</button>{task.status === AWAITING_APPROVAL && <button type="button" className="secondary" onClick={() => setRejecting(true)}>ไม่อนุมัติ</button>}<button type="button" className="primary" disabled={busy} onClick={() => run('approve')}>{busy ? 'กำลังบันทึก…' : '✓ อนุมัติ'}</button></>}
     </div>
   </section>;
+}
+
+// Approvers with a view-only link still need the whole picture to decide.
+function ReadOnlyDetails({ task }: { task: Task }) {
+  const blocks = [['รายละเอียดและขอบเขต', task.scope], ['เกณฑ์ตรวจรับ', task.criteria], ['สาเหตุที่ติดขัด / เรื่องที่รอตัดสินใจ', task.blocked_reason], ['หลักฐาน', task.evidence]].filter(([, v]) => v && v.trim());
+  if (!blocks.length) return null;
+  return <div className="readonly-details">{blocks.map(([label, value]) => <section key={label}><h3>{label}</h3><p>{value}</p></section>)}</div>;
 }
 
 function ViewerSummary({ task, projects }: { task: Task; projects: Project[] }) {
@@ -191,7 +201,7 @@ function describe(event: TaskEvent): { title: string; body?: string } {
   let p: Record<string, any> = {};
   try { p = JSON.parse(event.payload) ?? {}; } catch { /* keep empty */ }
   switch (event.action) {
-    case 'note': return { title: 'บันทึกความคืบหน้า', body: p.text };
+    case 'note': return { title: 'ความคืบหน้า / ความเห็น', body: p.text };
     case 'subtask': {
       if (p.op === 'add') return { title: 'เพิ่มงานย่อย', body: p.label };
       if (p.op === 'remove') return { title: 'ลบงานย่อย', body: p.label };
@@ -205,14 +215,14 @@ function describe(event: TaskEvent): { title: string; body?: string } {
     case 'created': return { title: 'สร้างงาน' };
     case 'imported': return { title: 'นำเข้า', body: [p.source, p.status].filter(Boolean).join(' · ') };
     case 'archived': return { title: 'ลบงาน' };
-    case 'approved': return { title: '✓ อนุมัติ', body: p.note || 'ย้ายไป “รอเปิดใช้”' };
-    case 'rejected': return { title: 'ไม่อนุมัติ', body: p.note };
+    case 'approved': return { title: '✓ อนุมัติ', body: p.note || 'ย้ายไป “' + STATUSES[Number(p.status?.to ?? 0)] + '”' };
+    case 'rejected': return { title: 'ไม่อนุมัติ → รอตัดสินใจ', body: p.note };
     case 'lark_notified': return { title: 'แจ้งกลุ่ม Lark (' + (p.target === 'main' ? 'กลุ่มจริง' : 'กลุ่มทดสอบ') + ')', body: p.headline };
     default: return { title: event.action };
   }
 }
 
-function ProgressTab({ task, larkTargets, onError, onNotice }: { task: Task; larkTargets: LarkTarget[]; onError: (s: string) => void; onNotice: (s: string) => void }) {
+function ProgressTab({ task, larkTargets, commentOnly = false, onError, onNotice }: { task: Task; larkTargets: LarkTarget[]; commentOnly?: boolean; onError: (s: string) => void; onNotice: (s: string) => void }) {
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
@@ -226,7 +236,7 @@ function ProgressTab({ task, larkTargets, onError, onNotice }: { task: Task; lar
       if (kind === 'notes') {
         // A Lark failure still returns 201 (the note is saved) with lark_warning: clear the box so it is not sent twice.
         const r = await api<{ lark_warning?: string }>(`/tasks/${task.id}/notes`, { method: 'POST', body: JSON.stringify({ text, notify: notify || null }) });
-        if (r.lark_warning) onError(r.lark_warning); else onNotice(notify ? 'บันทึกและส่งเข้า Lark แล้ว' : 'บันทึกความคืบหน้าแล้ว');
+        if (r.lark_warning) onError(r.lark_warning); else onNotice(commentOnly ? 'บันทึกความเห็นแล้ว' : notify ? 'บันทึกและส่งเข้า Lark แล้ว' : 'บันทึกความคืบหน้าแล้ว');
       }
       else { await api(`/tasks/${task.id}/notify`, { method: 'POST', body: JSON.stringify({ notify, text }) }); onNotice('ส่งสถานะงานเข้า Lark แล้ว'); }
       setText(''); await load();
@@ -234,8 +244,8 @@ function ProgressTab({ task, larkTargets, onError, onNotice }: { task: Task; lar
   }
   return <div className="drawer-body progress-tab">
     <section className="note-composer">
-      <strong>อัปเดตความคืบหน้า</strong>
-      <textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={'ทำอะไรไปแล้ว / ต่อไปจะทำอะไร / ติดอะไร\nเช่น ทำหน้า list เสร็จแล้ว รอ API ฝั่งหลังบ้าน'} aria-label="ข้อความความคืบหน้า" />
+      <strong>{commentOnly ? 'แสดงความเห็น / ไอเดียเพิ่มเติม' : 'อัปเดตความคืบหน้า'}</strong>
+      <textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={commentOnly ? 'ความเห็น คำถาม หรือไอเดียเพิ่มเติมถึงทีม' : 'ทำอะไรไปแล้ว / ต่อไปจะทำอะไร / ติดอะไร\nเช่น ทำหน้า list เสร็จแล้ว รอ API ฝั่งหลังบ้าน'} aria-label="ข้อความความคืบหน้า" />
       <div className="note-actions">
         <NotifyPicker targets={larkTargets} value={notify} onChange={setNotify} label="ส่งเข้า Lark ด้วย" />
         {notify && <button type="button" className="secondary" disabled={busy} onClick={() => send('notify')} title="ส่งสถานะงานและข้อความนี้เข้ากลุ่ม โดยไม่บันทึกเป็นความคืบหน้า">ส่งเข้า Lark อย่างเดียว</button>}
