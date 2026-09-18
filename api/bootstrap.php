@@ -81,10 +81,14 @@ function taskDto(array $t,string $role): array {
 function taskData(array $data): array {
     $out=[];
     foreach (['title'=>240,'feature'=>120,'public_summary'=>6000,'scope'=>20000,'criteria'=>12000,'evidence'=>12000,'assignee'=>120,'blocked_reason'=>6000] as $key=>$max) $out[$key]=textField($data,$key,$max,$key==='title');
-    $due=$data['planned_go_live_on']??'';
-    $date=is_string($due)?DateTime::createFromFormat('!Y-m-d',$due):false;
-    if (!$date||$date->format('Y-m-d')!==$due) reply(422,'ทุกงานต้องมีวันที่เริ่มใช้งานที่ถูกต้อง');
-    $out['planned_go_live_on']=$due;
+    // Optional since migration 004: missing, null or '' = not decided yet; anything else must be a real date.
+    $due=$data['planned_go_live_on']??null;
+    if ($due===null||$due==='') $out['planned_go_live_on']=null;
+    else {
+        $date=is_string($due)?DateTime::createFromFormat('!Y-m-d',$due):false;
+        if (!$date||$date->format('Y-m-d')!==$due) reply(422,'วันที่เริ่มใช้งานไม่ถูกต้อง');
+        $out['planned_go_live_on']=$due;
+    }
     $status=$data['status']??0;
     if (!is_int($status)||$status<0||$status>4) reply(422,'สถานะไม่ถูกต้อง');
     $out['status']=$status;

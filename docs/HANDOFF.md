@@ -30,7 +30,7 @@ src/                 หน้าเว็บ React
 api/
   bootstrap.php      config, DB, session, สิทธิ์, validation
   meetings.php       API รายงานประชุม
-  migrations/        001 → 002 → 003 (รันตามลำดับ ห้ามแก้ไฟล์ที่รันไปแล้ว)
+  migrations/        001 → 004 (รันตามลำดับ ห้ามแก้ไฟล์ที่รันไปแล้ว)
 public/
   api/index.php      router ของ API ทั้งหมด (/api/v1/...)
   index.html, assets ผลลัพธ์จาก build (commit ไว้สำหรับ AppServ)
@@ -48,12 +48,24 @@ docs/                คู่มือนี้, WORKLOG (บันทึกก
 1. ต้องมี Node 22, PHP (AppServ ใช้ 7.3 แต่โค้ดต้องรันได้บน 8.3 ด้วย), MySQL และ Apache ที่เปิด `mod_rewrite`
 2. clone repo ไว้ที่ `C:/AppServ/www/Workboard` (path นี้ผูกกับ URL `/Workboard/`)
 3. `npm install`
-4. สร้างฐานข้อมูล `workboard` แล้วรัน `api/migrations/001_core.sql`, `002_meetings.sql`, `003_permanent_links.sql` ตามลำดับ ด้วยบัญชีที่แก้โครงสร้างได้ (เช่น root)
+4. สร้างฐานข้อมูล `workboard` แล้วรัน `api/migrations/001_core.sql` → `004_optional_go_live.sql` ตามลำดับ ด้วยบัญชีที่แก้โครงสร้างได้ (เช่น root)
 5. สร้างบัญชีสำหรับแอปที่มีสิทธิ์แค่ `SELECT, INSERT, UPDATE, DELETE` บนฐาน `workboard`
    ถ้าใช้ PHP 7.3 กับ MySQL 8 ต้องตั้งบัญชีเป็น `mysql_native_password` ไม่งั้นต่อฐานไม่ได้
 6. คัดลอก `.env.example` เป็น `.env` แล้วใส่รหัสผ่าน (`.env` ไม่เข้า Git)
 7. `npm run build` แล้วเปิด http://localhost/Workboard/
 8. ออกลิงก์ผู้ดูแลสำหรับเครื่องตัวเอง: สร้างแถวใน `principals` (`is_admin=1`) แล้วรัน `node scripts/issue-admin-link.mjs --principal <id>`
+
+### ทางเลือก: Laragon / ไม่ใช้ Apache (Vite + PHP built-in)
+
+```text
+php -S 127.0.0.1:8095 scripts/dev-router.php     (API อย่างเดียว)
+npm run dev                                       (หน้าเว็บ http://127.0.0.1:5173/Workboard/ ส่ง /Workboard/api ต่อให้ PHP)
+```
+ใน `.env` ตั้ง `APP_ORIGIN=http://127.0.0.1:5173` · ถ้า mysql.exe ไม่อยู่ที่ AppServ ให้ตั้ง `MYSQL_BIN` ตอนรัน `tests/api.mjs` และ `issue-admin-link.mjs`
+
+### นำเข้างานจาก Lark Base (ครั้งเดียว)
+
+`php scripts/import-lark-base.php <โฟลเดอร์ backup ของ /lark-base-update> [--apply]` — ไม่ใส่ `--apply` = ดูก่อน รันซ้ำได้ ไม่สร้างงานซ้ำ
 
 ## 4. เทสต์
 
@@ -182,7 +194,7 @@ PATCH /api/v1/meetings/{id}           แก้รายงาน (ต้อง�
 ```
 
 **ช่องข้อมูลของงาน:**
-- **ต้องมี:** `title`, `planned_go_live_on` (YYYY-MM-DD) และ `status`
+- **ต้องมี:** `title` และ `status` · `planned_go_live_on` (YYYY-MM-DD) ไม่บังคับ ส่ง `null` หรือไม่ส่ง = ยังไม่กำหนด (migration 004)
   - `0` = รอทำ, `1` = กำลังทำ, `2` = รอทดสอบ, `3` = รอเปิดใช้, `4` = เปิดใช้งานแล้ว
 - **ไม่บังคับ:** `feature`, `public_summary` (ข้อความที่ผู้ชมภายนอกเห็น), `scope`, `criteria`, `evidence`, `assignee`, `blocked_reason` และ `checklist` (`[{label, done}]`)
 

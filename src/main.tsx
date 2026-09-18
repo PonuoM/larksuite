@@ -204,7 +204,7 @@ function Board({ tasks, projects, canEdit, onOpen, onMove }: { tasks: Task[]; pr
             <h2>{task.title}</h2>
             {task.public_summary&&<p className="card-summary">{task.public_summary}</p>}
             {task.blocked_reason && <p className="blocked">! {task.blocked_reason}</p>}
-            <div className={`deadline ${task.status !== 4 && task.planned_go_live_on < new Date().toISOString().slice(0, 10) ? 'overdue' : ''}`}>▣ เริ่มใช้ {formatDate(task.planned_go_live_on)}</div>
+            <div className={`deadline ${task.status !== 4 && task.planned_go_live_on && task.planned_go_live_on < new Date().toISOString().slice(0, 10) ? 'overdue' : ''}`}>▣ {task.planned_go_live_on ? `เริ่มใช้ ${formatDate(task.planned_go_live_on)}` : 'ยังไม่กำหนดวันเริ่มใช้'}</div>
             <footer><span>{task.assignee || 'ยังไม่ระบุผู้รับผิดชอบ'}</span><span>#{String(task.id).padStart(3, '0')}</span></footer>
           </article>)}
           {!items.length && <div className="drop-empty">ลากงานมาวางที่นี่</div>}
@@ -229,7 +229,7 @@ function TaskDrawer({ task, projects, editable, busy, onClose, onSave, onError }
       {tab === 'history' ? <div className="drawer-body history-list">{events.map((event) => <article key={event.id}><strong>{event.action}</strong><p>{event.actor} · {event.created_at}</p></article>)}{!events.length && <p>ยังไม่มีประวัติ</p>}</div> : <form className="drawer-body" onSubmit={(e) => { e.preventDefault(); onSave(isNew ? { ...EMPTY_TASK, ...draft } : draft); }}>
         <Field label="โปรเจกต์"><select value={draft.project_id} disabled={!isNew} onChange={e=>field('project_id',Number(e.target.value))}>{projects.filter(p=>p.id===draft.project_id||p.role!=='viewer').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
         <Field label="ชื่องาน"><input required value={draft.title} onChange={(e) => field('title', e.target.value)} disabled={!editable} /></Field>
-        <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))} disabled={!editable}>{STATUSES.map((s, i) => <option key={s} value={i}>{s}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน"><input required type="date" value={draft.planned_go_live_on} onChange={(e) => field('planned_go_live_on', e.target.value)} disabled={!editable} /></Field></div>
+        <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))} disabled={!editable}>{STATUSES.map((s, i) => <option key={s} value={i}>{s}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} disabled={!editable} /></Field></div>
         <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} disabled={!editable} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} disabled={!editable} /></Field></div>
         <Field label="สรุปสำหรับผู้ชมภายนอก"><textarea rows={3} value={draft.public_summary} onChange={(e) => field('public_summary', e.target.value)} disabled={!editable} /></Field>
         {editable && <><Field label="รายละเอียดและขอบเขตงาน"><textarea rows={6} value={draft.scope ?? ''} onChange={(e) => field('scope', e.target.value)} /></Field>

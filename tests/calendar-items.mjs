@@ -34,6 +34,13 @@ assert.equal(calendarItems([task(1, 0, '2026-09-20')], [meeting(9, '2026-09-20')
 assert.equal(calendarItems([task(2, 4, '2026-09-25', '2026-09-20 03:00:00')], [], { ...all, released: false }, '2026-09-18').size, 0);
 assert.equal(calendarItems([task(1, 0, '2026-09-20', null, 2)], [meeting(9, '2026-09-20', 2)], { ...all, hiddenProjects: [2] }, '2026-09-18').size, 0);
 
+// No go-live date (migration 004): nothing lands on a day, nothing is overdue, a "null" day never appears.
+const undated = calendarItems([task(4, 1, null), task(5, 4, null, null), task(6, 4, null, '2026-09-15 03:00:00')], [], all, '2026-09-18');
+assert.equal(undated.has(null), false);
+assert.equal(undated.has('null'), false);
+assert.deepEqual([...undated.keys()], ['2026-09-15']); // a release with a known date still shows
+assert.equal(undated.get('2026-09-15')[0].key, 't6');
+
 // Visible range helpers: a month view is always 6 Monday-first weeks and may touch 3 months.
 const rows = weekRows('2026-09');
 assert.equal(rows.length, 6);

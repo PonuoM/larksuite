@@ -10,7 +10,7 @@ const env = Object.fromEntries(envText.split(/\r?\n/).filter(Boolean).map((line)
   const [key, ...rest] = line.split('=');
   return [key, rest.join('=').replace(/^"|"$/g, '')];
 }));
-const mysql = 'C:/AppServ/MySQL/bin/mysql.exe';
+const mysql = process.env.MYSQL_BIN || 'C:/AppServ/MySQL/bin/mysql.exe';
 const mysqlArgs = [`-u${env.DB_USER}`, `-p${env.DB_PASSWORD}`, '-hlocalhost', '-N', env.DB_NAME];
 // Defaults target local AppServ. For a deployed instance set WORKBOARD_API, WORKBOARD_ORIGIN and
 // WORKBOARD_SQL_SSH (e.g. root@host): fixtures then run through `docker exec workboard-db` over SSH.
@@ -98,6 +98,16 @@ try {
   if (thaiCreated.status === 201) await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(thaiCreated.payload.data.id)};`);
   if (thaiCreated.status !== 201 || thaiCreated.payload.data.title !== thaiTitle) throw new Error(`240-character Thai title rejected: ${thaiCreated.status}`);
   if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: thaiTitle + 'ก' }) })).status !== 422) throw new Error('241-character title accepted');
+
+  // Go-live date is optional (migration 004): missing / null / '' are stored as null; a malformed date is still rejected.
+  for (const due of [undefined, null, '']) {
+    const input = { ...taskInput, title: 'ไม่มีกำหนดเริ่มใช้' };
+    if (due === undefined) delete input.planned_go_live_on; else input.planned_go_live_on = due;
+    const undated = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(input) });
+    if (undated.status === 201) await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(undated.payload.data.id)};`);
+    if (undated.status !== 201 || undated.payload.data.planned_go_live_on !== null) throw new Error(`task without go-live date (${JSON.stringify(due)}) rejected: ${undated.status}`);
+  }
+  if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, planned_go_live_on: '2026-02-30' }) })).status !== 422) throw new Error('invalid go-live date accepted');
 
   const moved = await call(editor, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 1, version }) });
   if (moved.status !== 200 || moved.payload.data.status !== 1 || moved.payload.data.version !== version + 1) throw new Error('move/version failed');

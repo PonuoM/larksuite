@@ -1,5 +1,5 @@
 // Decides which calendar day each meeting and task lands on. Pure functions so they can be tested without a browser.
-type TaskLike = { id: number; project_id: number; title: string; status: number; planned_go_live_on: string; actual_released_at: string | null };
+type TaskLike = { id: number; project_id: number; title: string; status: number; planned_go_live_on: string | null; actual_released_at: string | null };
 type MeetingLike = { id: number; project_id: number; title: string; meeting_on: string };
 
 export type CalendarFilters = { meetings: boolean; pending: boolean; released: boolean; hiddenProjects: number[] };
@@ -30,7 +30,8 @@ export function calendarItems<T extends TaskLike, M extends MeetingLike>(tasks: 
     const released = t.status === 4;
     if (released ? !filters.released : !filters.pending) continue;
     const day = released && t.actual_released_at ? bangkokDate(t.actual_released_at) : t.planned_go_live_on;
-    add(day, { key: 't' + t.id, kind: released ? 'released' : 'pending', project_id: t.project_id, title: t.title, overdue: !released && t.planned_go_live_on < today, task: t });
+    if (!day) continue; // no go-live date decided (or a release with no known date): no day to place it on
+    add(day, { key: 't' + t.id, kind: released ? 'released' : 'pending', project_id: t.project_id, title: t.title, overdue: !released && !!t.planned_go_live_on && t.planned_go_live_on < today, task: t });
   }
   const order = { meeting: 0, pending: 1, released: 2 };
   for (const list of byDay.values()) list.sort((a, b) => order[a.kind] - order[b.kind] || a.title.localeCompare(b.title, 'th'));

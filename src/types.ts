@@ -21,7 +21,7 @@ export type Task = {
   title: string;
   public_summary: string;
   status: number;
-  planned_go_live_on: string;
+  planned_go_live_on: string | null;
   actual_released_at: string | null;
   updated_at: string;
   version: number;
