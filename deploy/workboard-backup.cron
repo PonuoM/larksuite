@@ -1,0 +1,4 @@
+# Workboard daily DB dump. Explicit shell survives git archive's 0644 script mode.
+SHELL=/bin/sh
+PATH=/usr/bin:/bin
+15 3 * * * root /bin/sh /opt/workboard/deploy/backup.sh >> /var/log/workboard-backup.log 2>&1

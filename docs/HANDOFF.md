@@ -127,10 +127,12 @@ curl https://larksuite.prima49.com/api/v1/session
 - **migration ใหม่:**
   1. เพิ่มไฟล์ `api/migrations/004_xxx.sql`
   2. deploy โค้ด
-  3. สำรองข้อมูลก่อน: รัน `/opt/workboard/deploy/backup.sh`
+  3. สำรองข้อมูลก่อน: รัน `/bin/sh /opt/workboard/deploy/backup.sh`
   4. รันไฟล์ด้วย root: `docker exec -i workboard-db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" workboard' < /opt/workboard/api/migrations/004_xxx.sql`
   5. เพิ่ม mount บรรทัดใหม่ใน `deploy/docker-compose.yml` เพื่อให้ติดตั้งใหม่ได้ครบ
 - **backup:** อัตโนมัติทุกวัน 03:15 ที่ `/opt/backups/workboard` เก็บ 14 วัน (cron: `/etc/cron.d/workboard-backup`, log: `/var/log/workboard-backup.log`)
+- ติดตั้ง cron จาก `deploy/workboard-backup.cron` ด้วย `install -o root -g root -m 0644 /opt/workboard/deploy/workboard-backup.cron /etc/cron.d/workboard-backup` หลังสำรอง cron เดิมไว้ (เวลาอิง timezone ของ server) ต้องเรียกผ่าน `/bin/sh` เพราะ `git archive` ส่ง `backup.sh` ด้วย mode 0644 จึงเรียกตรงไม่ได้
+- ชื่อไฟล์ backup ใช้วันที่: รันซ้ำวันเดียวกันจะอัปเดตไฟล์เดิม ให้ตรวจเวลาแก้ไขและ `gzip -t` แทนการนับไฟล์
 - **restore** (ทับข้อมูลปัจจุบันทั้งหมด ต้องแน่ใจก่อน):
   `gunzip -c /opt/backups/workboard/workboard-YYYY-MM-DD.sql.gz | docker exec -i workboard-db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" workboard'`
 - ควรคัดลอกไฟล์ backup ออกไปเก็บนอก VPS เป็นระยะ ตอนนี้ยังไม่มีระบบอัตโนมัติสำหรับเรื่องนี้

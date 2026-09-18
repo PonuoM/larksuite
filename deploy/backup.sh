@@ -1,5 +1,6 @@
 #!/bin/sh
-# Daily Workboard database dump, kept 14 days. Installed as /etc/cron.d/workboard-backup on the VPS.
+# Daily Workboard database dump, kept 14 days. Run with /bin/sh (Git stores this as 0644).
+# Install deploy/workboard-backup.cron as /etc/cron.d/workboard-backup on the VPS.
 set -eu
 umask 077
 dir=/opt/backups/workboard
