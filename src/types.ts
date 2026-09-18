@@ -34,6 +34,8 @@ export type Task = {
   blocked_reason?: string;
   checklist?: ChecklistItem[];
   archived?: number;
+  // Present only in a write response when the change was saved but the Lark notice failed.
+  lark_warning?: string;
 };
 
 export type TaskEvent = {

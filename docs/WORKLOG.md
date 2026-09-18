@@ -1,5 +1,13 @@
 # Work log
 
+## 2026-09-18 — backup cron repair (19:44 +07)
+
+Resumed from scratch/codex-handoff.md; handled urgent backup failure first.
+Experiment ledger: SSH inspection found cron active, no log yet, backup script mode 0664 and Git mode 100644. Direct invocation reproduced Permission denied (exit 126 remotely). The identical script invoked through /bin/sh with env -i PATH=/usr/bin:/bin HOME=/root succeeded, isolating script execute permission as the cause. Daily filename reuse also explains why a successful second run adds no new filename.
+Added deploy/workboard-backup.cron with explicit /bin/sh and PATH; updated script comments and backup instructions. Following execution approval, installed only the cron configuration on production (root:root 0644); original saved to /opt/backups/workboard/cron-before-shell-fix-20260918. No container restart, app deployment, DB mutation, or Lark message.
+Verification: ran the new command in a cron-like environment with log redirection; backup workboard-2026-09-18.sql.gz updated at 19:44:29 +07, 37,330 bytes, mode 0600. gzip -t succeeded; zgrep found one Dump completed marker. Cron remains active; app DEPLOYED_COMMIT remains 7a77bbf. git diff --check passed before documentation updates. No application test suite run (no application behavior changed).
+Limitations: actual scheduled execution at 03:15 on Sep 19 and restore into an isolated DB remain unverified. Existing /bin/sh dump pipeline can mask an upstream dump failure; hardening that behavior remains separate work. Local changes not committed/pushed. Next: confirm overnight backup, then review Mini ERP task statuses with the owner before enriching them.
+
 ## 2026-09-18 — project bootstrap and implementation planning
 
 User authorized establishing an independent Workboard project with continuity Markdown documents.
@@ -142,3 +150,15 @@ Backup /opt/backups/workboard/pre-005-20260918192133.sql.gz (deploy/backup.sh ra
 Note: `up -d app` also recreated workboard-db because the compose file gained the 005 initdb mount (a few seconds of DB downtime). Volume kept; verified afterwards: 99 tasks, 3 principals, 4 invitations, 2 meetings, columns from 004/005 present. HTTPS 200, /api/v1/session ok, new routes answer 401 unauthenticated, app log clean.
 Not done: LINK_KEY and LARK_* were not added to /opt/workboard/deploy/app.env (writing secrets to the server was blocked by the agent permission policy); until then the Lark picker and "ดูลิงก์" stay hidden and the old viewer link is not sealed.
 Follow-up (owner authorised): appended LINK_KEY (generated on the server) and LARK_MAIN_*/LARK_TEST_* to app.env (backup app.env.bak.<timestamp>), `docker compose restart app`; sealed the existing viewer link (invitation 4, "ผู้เยี่ยมชม") with scripts/seal-link.php copied into the container and removed afterwards. Checked inside the container: both Lark targets configured, LINK_KEY valid, sealed link decrypts. No Lark message sent from production yet.
+
+## 2026-09-18 — actions not visible until F5 (local only, not committed/deployed)
+Evidence first: production meeting_events has no `archived` event ever (the owner's two same-title meetings 2 and 3 are still live), so the reported delete never reached the DB there; Caddy keeps no access log. Reproduced locally in the browser instead.
+Root causes (confirmed in browser):
+1. MeetingCalendar ignored write responses: onSaved/onArchived only bumped `revision`, which reloaded every project×month with Promise.all; the item stayed until all ~15 requests finished, and forever (until F5) if any one failed. Repro: 700 ms delay + one 500 → deleted meeting still shown at 4 s while DB had archived=1.
+2. Save succeeded but Lark failed → API 502 → UI treated it as unsaved: new-task drawer stayed "งานใหม่" and a second click created a duplicate task (reproduced: 2 cards); a note stayed in the box and was re-sendable.
+3. Two quick drags of one card: second PATCH carried the pre-first-move version → false 409 "มีคนแก้งานนี้แล้ว" (reproduced).
+4. createProject and the mobile "กลับบอร์ด" used location.reload() (code evidence; not reproduced to avoid leaving a project behind until the fix was tested).
+Fix: meeting writes applied from the response (upsert/remove) with sequence numbers so earlier reloads cannot undo them; reloads use allSettled and keep only failed project-months; 2xx + lark_warning contract (api/task-updates.php notifyAfterCommit/withLarkWarning, public/api/index.php); per-task move lock + targeted rollback + latest-load-wins in main.tsx; loadProjects() instead of reload; notify picker reset after save.
+Checks: tsc, build, tests/api.mjs (normal and WORKBOARD_LARK_BROKEN=1 with an unreachable local test webhook — old PHP fails it with 502, new passes), meeting-state/report-format/presentation/calendar-items, PHP lint. Browser (Playwright, local): meeting delete under 700 ms delay + failing reload gone at 200 ms and still gone after reload; DELETE 500 keeps item + drawer error; create/edit/publish/move month; task create with failing Lark → drawer becomes #id, one card after pressing save again, search filter kept; note with failing Lark → box cleared, warning; double drag → one PATCH, no 409; failed move rolls back; sub-task tick → card count; task delete; project create / link close / member revoke without reload; 375 px meeting delete. Local .env restored, QA data archived/revoked, QA project removed.
+Limits: other people's changes still need F5 (or month change for meetings); a 409 on the drawer reloads the list but the open drawer keeps the stale version (reopen); Lark is called synchronously (a dead webhook delays the save response up to the 8 s timeout, ~2 s observed locally).
+Options for seeing others' edits (not built): A) refetch on window focus/visibility (smallest), B) poll a cheap "changed since" endpoint every 30–60 s, C) SSE/WebSocket (new infrastructure).

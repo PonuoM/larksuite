@@ -152,6 +152,24 @@ try {
   if ((await call(editor, `/tasks/${taskId}/notify`, { method: 'POST', body: '{}' })).status !== 422) throw new Error('notify without target accepted');
   const actions = (await call(editor, `/tasks/${taskId}/events`)).payload.data.map((e) => e.action);
   if (actions.filter((a) => a === 'subtask').length !== 3 || !actions.includes('note')) throw new Error('sub-task/note history missing: ' + actions.join(','));
+  // WORKBOARD_LARK_BROKEN=1 with LARK_TEST_WEBHOOK pointing somewhere unreachable: a saved change whose Lark notice
+  // fails must answer 2xx with the saved data + lark_warning (a 502 made the UI treat it as unsaved → duplicates).
+  if (process.env.WORKBOARD_LARK_BROKEN === '1') {
+    const larkTitle = 'API Lark broken ' + marker;
+    const created = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: larkTitle, notify: 'test' }) });
+    if (created.status !== 201 || !created.payload.data?.id || !created.payload.data.lark_warning) throw new Error('create + failed Lark should be 201 with lark_warning: ' + JSON.stringify(created));
+    await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(created.payload.data.id)};`);
+    if (Number(await sql(`SELECT COUNT(*) FROM tasks WHERE title='${larkTitle}'`)) !== 1) throw new Error('task saved more than once');
+    const patched = await call(editor, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 1, checklist: full.payload.data.checklist, version: full.payload.data.version, notify: 'test' }) });
+    if (patched.status !== 200 || !patched.payload.data.lark_warning || patched.payload.data.version !== full.payload.data.version + 1) throw new Error('patch + failed Lark should be 200 with lark_warning: ' + JSON.stringify(patched));
+    full.payload.data = patched.payload.data;
+    const brokenNote = await call(editor, `/tasks/${taskId}/notes`, { method: 'POST', body: JSON.stringify({ text: 'note with broken Lark', notify: 'test' }) });
+    if (brokenNote.status !== 201 || !brokenNote.payload.data.lark_warning) throw new Error('note + failed Lark should be 201 with lark_warning');
+    const brokenSub = await sub({ op: 'add', label: 'sub with broken Lark', notify: 'test' });
+    if (brokenSub.status !== 200 || !brokenSub.payload.data.lark_warning) throw new Error('sub-task + failed Lark should be 200 with lark_warning');
+    full.payload.data = brokenSub.payload.data;
+    if ((await call(editor, `/tasks/${taskId}/notify`, { method: 'POST', body: JSON.stringify({ notify: 'test' }) })).status !== 502) throw new Error('send-only notify with failed Lark should stay 502');
+  }
   if (process.env.WORKBOARD_LARK_TEST === '1') {
     const sent = await call(editor, `/tasks/${taskId}/notify`, { method: 'POST', body: JSON.stringify({ target: 'test', notify: 'test', text: 'ทดสอบระบบแจ้งเตือนจาก Workboard (integration test)' }) });
     if (sent.status !== 200) throw new Error('Lark test notify failed: ' + JSON.stringify(sent));

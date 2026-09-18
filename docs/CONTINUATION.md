@@ -1,5 +1,11 @@
 # ทำงานต่อจากตรงนี้
 
+## จุดต่อปัจจุบัน — 18 ก.ย. 2026 เวลา 19:44
+
+แก้ backup ด่วนจาก scratch/codex-handoff.md แล้ว: cron เรียก `/bin/sh /opt/workboard/deploy/backup.sh` เพราะไฟล์ใน Git เป็น 100644 และ execute โดยตรงไม่ได้ สำรอง cron เดิมไว้ `/opt/backups/workboard/cron-before-shell-fix-20260918` และติดตั้งจาก `deploy/workboard-backup.cron` แล้ว
+รันด้วย environment แบบ cron สำเร็จ; backup `workboard-2026-09-18.sql.gz` ขนาด 37,330 ไบต์ mode 600, gzip integrity ผ่านและมี dump completion marker เวลา 19:44:29 +07. ยังไม่ได้รอ cron รอบ 03:15 หรือทดสอบ restore. Production app revision ยังเป็น 7a77bbf; ไม่ได้ deploy แอปหรือ restart container.
+ถัดไป: ตรวจ backup หลัง 19 ก.ย. 03:15 แล้วคุยตรวจรายการงาน Mini ERP กับเจ้าของตาม handoff ห้ามเดาสถานะหรือแก้รายละเอียดก่อนตกลง และยังไม่ส่ง Lark. ใช้ editor link สำหรับ AI ตาม TASK-GUIDE. การแก้ cron และเอกสารรอบนี้ยังไม่ได้ commit/push.
+
 ## เริ่ม session ใหม่
 
 เปิด workspace ที่ C:/AppServ/www/Workboard แทน CRM_ERP_V4
@@ -67,3 +73,6 @@ Read-only SSH inspection: DEPLOYED_COMMIT=494acf2; workboard-app Up; workboard-d
 
 ## ล่าสุด: งานย่อย / ความคืบหน้า / Lark (local, ยังไม่ deploy)
 ดู TASKS.md หัวข้อ "18 ก.ย. รอบ 2" และ docs/TASK-GUIDE.md. Deploy ต้องทำ: push, git archive → /opt/workboard, รัน 005_viewable_links.sql ใน workboard-db, เพิ่ม LINK_KEY (ใหม่ ห้ามใช้ของ local) + LARK_MAIN_*/LARK_TEST_* ใน deploy/app.env, docker compose build app && up -d, แล้ว seal ลิงก์ผู้ชมเดิมด้วย scripts/seal-link.php (อ่านลิงก์จาก STDIN)
+
+## ล่าสุด: แก้ "ต้องกด F5" (local, ยังไม่ commit/deploy)
+ดู TASKS.md "18 ก.ย. รอบ 3" และ WORKLOG ส่วนท้าย. ไฟล์: src/MeetingCalendar.tsx, src/meeting-state.ts (ใหม่), src/main.tsx, src/TaskDrawer.tsx, src/types.ts, api/task-updates.php, public/api/index.php, scripts/wb.mjs, tests/api.mjs, tests/meeting-state.mjs (ใหม่). ใน working tree ยังมีงาน backup ของรอบอื่น (deploy/backup.sh, deploy/workboard-backup.cron, HANDOFF) ที่ยังไม่ commit — แยก commit

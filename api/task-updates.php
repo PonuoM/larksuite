@@ -11,7 +11,8 @@ function larkTargets(): array {
     return $out;
 }
 // Custom-bot webhook with signature check: sign = base64(HMAC-SHA256(key = timestamp."\n".secret, message = "")).
-function larkSend(string $target,string $text,string $failPrefix='ส่งเข้า Lark ไม่สำเร็จ'): void {
+// Returns null when Lark accepted the message, otherwise a message for the user.
+function larkSend(string $target,string $text): ?string {
     if(!isset(LARK_TARGETS[$target]))reply(422,'ไม่รู้จักกลุ่ม Lark นี้');
     $url=config()['LARK_'.strtoupper($target).'_WEBHOOK']??'';$secret=config()['LARK_'.strtoupper($target).'_SECRET']??'';
     if($url==='')reply(422,'ยังไม่ได้ตั้งค่าบอท Lark สำหรับ'.LARK_TARGETS[$target]);
@@ -21,7 +22,9 @@ function larkSend(string $target,string $text,string $failPrefix='ส่งเ�
     $response=@file_get_contents($url,false,$context);
     $json=is_string($response)?json_decode($response,true):null;
     $code=is_array($json)?($json['code']??$json['StatusCode']??null):null;
-    if($code!==0){error_log('Workboard Lark '.$target.': '.substr((string)$response,0,300));reply(502,$failPrefix.(is_array($json)&&isset($json['msg'])?': '.$json['msg']:' (ไม่มีการตอบกลับ)'));}
+    if($code===0)return null;
+    error_log('Workboard Lark '.$target.': '.substr((string)$response,0,300));
+    return is_array($json)&&isset($json['msg'])?': '.$json['msg']:' (ไม่มีการตอบกลับ)';
 }
 function taskLink(int $id): string {return config()['APP_ORIGIN'].rtrim(config()['APP_BASE'],'/').'/?view=board&task='.$id;}
 function larkTaskText(array $t,array $u,string $headline): string {
@@ -49,13 +52,16 @@ function notifyTarget(array $d): ?string {
     if(!is_string($target)||!isset(LARK_TARGETS[$target]))reply(422,'กลุ่ม Lark ไม่ถูกต้อง');
     return $target;
 }
-// Called after commit: the task change is kept even when Lark is down; the caller gets a 502 that says so.
-function notifyAfterCommit(?string $target,array $t,array $u,string $headline,bool $saved=true): bool {
-    if(!$target)return false;
-    larkSend($target,larkTaskText($t,$u,$headline),$saved?'บันทึกแล้ว แต่ส่งเข้า Lark ไม่สำเร็จ':'ส่งเข้า Lark ไม่สำเร็จ');
+// Called after commit. The change is already saved, so a Lark failure must not look like a failed save
+// (the client would retry and create duplicates): it returns a warning that goes out with a 2xx response.
+function notifyAfterCommit(?string $target,array $t,array $u,string $headline): ?string {
+    if(!$target)return null;
+    $failed=larkSend($target,larkTaskText($t,$u,$headline));
+    if($failed!==null)return 'บันทึกแล้ว แต่ส่งเข้า Lark ไม่สำเร็จ'.$failed;
     event((int)$t['id'],$u,'lark_notified',['target'=>$target,'headline'=>$headline]);
-    return true;
+    return null;
 }
+function withLarkWarning(array $dto,?string $warning): array {return $warning===null?$dto:$dto+['lark_warning'=>$warning];}
 
 function taskUpdateRoutes(string $route,string $method,array $u): void {
     if($route==='/lark/targets'&&$method==='GET')reply(200,'กลุ่ม Lark',larkTargets());
@@ -68,15 +74,18 @@ function taskUpdateRoutes(string $route,string $method,array $u): void {
 
     if($kind==='notify') {
         if(!$target)reply(422,'กรุณาเลือกกลุ่ม Lark');
-        notifyAfterCommit($target,$t,$u,textField($d,'text',2000),false);
+        $headline=textField($d,'text',2000);
+        $failed=larkSend($target,larkTaskText($t,$u,$headline));
+        if($failed!==null)reply(502,'ส่งเข้า Lark ไม่สำเร็จ'.$failed);
+        event($id,$u,'lark_notified',['target'=>$target,'headline'=>$headline]);
         reply(200,'ส่งเข้า '.LARK_TARGETS[$target].' แล้ว',['notified'=>$target]);
     }
 
     if($kind==='notes') {
         $text=textField($d,'text',4000,true);
         event($id,$u,'note',['text'=>$text]);
-        $sent=notifyAfterCommit($target,$t,$u,'อัปเดต: '.$text);
-        reply(201,$sent?'บันทึกและส่งเข้า Lark แล้ว':'บันทึกความคืบหน้าแล้ว',['task'=>taskDto($t,$role)]);
+        $warning=notifyAfterCommit($target,$t,$u,'อัปเดต: '.$text);
+        reply(201,$warning??($target?'บันทึกและส่งเข้า Lark แล้ว':'บันทึกความคืบหน้าแล้ว'),withLarkWarning(['task'=>taskDto($t,$role)],$warning));
     }
 
     // subtasks: {op:add,label,note?} · {op:set,id,done?,label?,note?} · {op:remove,id}
@@ -110,6 +119,6 @@ function taskUpdateRoutes(string $route,string $method,array $u): void {
     query('UPDATE tasks SET checklist=?,version=version+1,updated_at=UTC_TIMESTAMP() WHERE id=?',[json_encode($list,JSON_UNESCAPED_UNICODE),$id]);
     event($id,$u,'subtask',$payload);
     $saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
-    notifyAfterCommit($target,$saved,$u,$headline);
-    reply(200,'บันทึกงานย่อยแล้ว',taskDto($saved,$role));
+    $warning=notifyAfterCommit($target,$saved,$u,$headline);
+    reply(200,$warning??'บันทึกงานย่อยแล้ว',withLarkWarning(taskDto($saved,$role),$warning));
 }

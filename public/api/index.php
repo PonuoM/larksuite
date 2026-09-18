@@ -97,7 +97,7 @@ try {
        editable($role);$data=body();$target=notifyTarget($data);$d=taskData($data);db()->beginTransaction();
        query('INSERT INTO tasks(project_id,title,feature,public_summary,scope,criteria,evidence,assignee,blocked_reason,checklist,status,planned_go_live_on,actual_released_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',[$project,$d['title'],$d['feature'],$d['public_summary'],$d['scope'],$d['criteria'],$d['evidence'],$d['assignee'],$d['blocked_reason'],$d['checklist'],$d['status'],$d['planned_go_live_on'],$d['status']===4?gmdate('Y-m-d H:i:s'):null]);
        $id=(int)db()->lastInsertId();event($id,$u,'created',['status'=>$d['status'],'deadline'=>$d['planned_go_live_on']]);$saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
-       notifyAfterCommit($target,$saved,$u,'งานใหม่'.($d['public_summary']!==''?': '.$d['public_summary']:''));reply(201,'สร้างงานแล้ว',taskDto($saved,$role));
+       $warning=notifyAfterCommit($target,$saved,$u,'งานใหม่'.($d['public_summary']!==''?': '.$d['public_summary']:''));reply(201,$warning??'สร้างงานแล้ว',withLarkWarning(taskDto($saved,$role),$warning));
     }
  }
  if(preg_match('~^/tasks/(\d+)(/events)?$~',$route,$m)) {
@@ -112,7 +112,7 @@ try {
        if($stmt->rowCount()!==1){db()->rollBack();reply(409,'มีคนแก้งานนี้แล้ว กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก');}
        $changes=[];if($d)foreach($d as $key=>$value)if((string)$t[$key]!== (string)$value)$changes[$key]=['from'=>$t[$key],'to'=>$value];
        event($id,$u,$method==='DELETE'?'archived':'updated',$changes);$saved=query('SELECT * FROM tasks WHERE id=?',[$id])->fetch();db()->commit();
-       if($d)notifyAfterCommit($target,$saved,$u,changeHeadline($changes,$data['notify_text']??''));reply(200,'บันทึกแล้ว',taskDto($saved,$role));
+       $warning=$d?notifyAfterCommit($target,$saved,$u,changeHeadline($changes,$data['notify_text']??'')):null;reply(200,$warning??'บันทึกแล้ว',withLarkWarning(taskDto($saved,$role),$warning));
     }
  }
  reply(404,'ไม่พบรายการที่ร้องขอ');

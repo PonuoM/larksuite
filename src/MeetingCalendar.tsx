@@ -4,6 +4,7 @@ import type { Meeting, Project, Task } from './types';
 import FormattedReport from './FormattedReport';
 import { today, dateLabel } from './ProjectViews';
 import { calendarItems, monthsBetween, shiftDay, weekOf, weekRows, type CalendarFilters, type CalendarItem } from './calendar-items';
+import { mergeLoaded, removeMeeting, upsertMeeting, type LocalChange, type LoadJob } from './meeting-state';
 const template='# สรุปการประชุม\n\n## ประเด็นที่หารือ\n- \n\n## ข้อตกลง / มติ\n- \n\n## งานที่ต้องติดตาม\n| งาน | ผู้รับผิดชอบ | กำหนดส่ง |\n| --- | --- | --- |\n|  |  |  |\n\n## ประเด็นค้าง\n- ';
 
 // Calendar layout follows the WorkAlljob/Lark concept (side panel + month/week grid) in Workboard's own palette.
@@ -30,6 +31,14 @@ export default function MeetingCalendar({ projects, tasks, projectId, onProject,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  // Every save/delete gets a sequence number so a reload that started earlier cannot bring the old state back.
+  const changeSeq = useRef(0);
+  const changes = useRef<LocalChange<Meeting>[]>([]);
+  function applyChange(id: number, meeting: Meeting | null) {
+    const seq = ++changeSeq.current;
+    changes.current = [...changes.current.slice(-49), { seq, id, meeting }];
+    setMeetings((list) => meeting ? upsertMeeting(list, meeting) : removeMeeting(list, id));
+  }
   const [sheetOpen, setSheetOpen] = useState(false);
   const scoped = useMemo(() => projects.filter((p) => !projectId || p.id === projectId), [projects, projectId]);
   const writable = scoped.filter((p) => p.role !== 'viewer');
@@ -40,13 +49,22 @@ export default function MeetingCalendar({ projects, tasks, projectId, onProject,
 
   useEffect(() => { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* storage unavailable: keep in memory */ } }, [filters]);
   // Load every month the grid shows, so leading/trailing days of neighbouring months also show their meetings.
+  // One failed project/month no longer discards the whole reload: it keeps what was shown and reports the gap.
   useEffect(() => {
     let cancelled = false; setLoading(true); setError('');
-    Promise.all(scoped.flatMap((p) => months.split(',').map(async (month) => {
+    const startSeq = changeSeq.current;
+    const jobs: LoadJob[] = scoped.flatMap((p) => months.split(',').map((month) => ({ project: p.id, month })));
+    Promise.allSettled(jobs.map(async ({ project, month }) => {
       const items: Meeting[] = []; let cursor: number | null = null;
-      do { const data: { items: Meeting[]; next_cursor: number | null } = await api('/projects/' + p.id + '/meetings?month=' + month + (cursor ? '&cursor=' + cursor : '')); items.push(...data.items); cursor = data.next_cursor; } while (cursor);
+      do { const data: { items: Meeting[]; next_cursor: number | null } = await api('/projects/' + project + '/meetings?month=' + month + (cursor ? '&cursor=' + cursor : '')); items.push(...data.items); cursor = data.next_cursor; } while (cursor);
       return items;
-    }))).then((r) => { if (!cancelled) setMeetings(r.flat()); }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
+    })).then((settled) => {
+      if (cancelled) return;
+      const results = settled.map((r) => r.status === 'fulfilled' ? r.value : null);
+      setMeetings((previous) => mergeLoaded(previous, jobs, results, changes.current, startSeq));
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed) setError('โหลดรายงานประชุมบางส่วนไม่สำเร็จ: ' + (failed.reason instanceof Error ? failed.reason.message : 'ไม่ทราบสาเหตุ'));
+    }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [months, scoped, revision]);
 
@@ -100,13 +118,13 @@ export default function MeetingCalendar({ projects, tasks, projectId, onProject,
         </div>
         {writable.length > 0 && <button className="primary" onClick={() => create()}>+ บันทึกประชุม</button>}
       </header>
-      {error && <div className="alert error wcal-error" role="alert">{error}</div>}
+      {error && <div className="alert error wcal-error" role="alert">{error} <button className="text-action" disabled={loading} onClick={() => setRevision((v) => v + 1)}>ลองโหลดใหม่</button></div>}
       {view === 'month'
         ? <MonthGrid rows={rows} month={day.slice(0, 7)} selected={day} byDay={byDay} color={color} onSelect={setDay} onOpen={open} />
         : <WeekGrid days={rows[0]} selected={day} byDay={byDay} color={color} projects={projects} onSelect={setDay} onOpen={open} />}
       <div className="wcal-below-agenda">{agenda}</div>
     </section>
-    {selected && <MeetingDrawer key={selected.id + '-' + selected.meeting_on} initial={selected} projects={projects} onClose={() => setSelected(null)} onSaved={(m) => { setSelected(m); setDay(m.meeting_on); setRevision((v) => v + 1); }} onArchived={() => { setSelected(null); setRevision((v) => v + 1); }} />}
+    {selected && <MeetingDrawer key={selected.id + '-' + selected.meeting_on} initial={selected} projects={projects} onClose={() => setSelected(null)} onSaved={(m) => { applyChange(m.id, m); setSelected(m); setDay(m.meeting_on); }} onArchived={(id) => { applyChange(id, null); setSelected(null); }} />}
   </div>;
 }
 
@@ -207,7 +225,7 @@ function MiniMonth({ selected, onPick, marked }: { selected: string; onPick: (d:
   </section>;
 }
 
-function MeetingDrawer({initial,projects,onClose,onSaved,onArchived}:{initial:Meeting;projects:Project[];onClose:()=>void;onSaved:(m:Meeting)=>void;onArchived:()=>void}) {
+function MeetingDrawer({initial,projects,onClose,onSaved,onArchived}:{initial:Meeting;projects:Project[];onClose:()=>void;onSaved:(m:Meeting)=>void;onArchived:(id:number)=>void}) {
  const dialog=useRef<HTMLElement>(null);
  useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>previous?.focus();},[]);
  const [draft,setDraft]=useState(initial);const [tab,setTab]=useState<'edit'|'read'>(initial.id?'read':'edit');const [loading,setLoading]=useState(!!initial.id);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [saved,setSaved]=useState(false);const [archiveConfirm,setArchiveConfirm]=useState(false);
@@ -215,7 +233,7 @@ function MeetingDrawer({initial,projects,onClose,onSaved,onArchived}:{initial:Me
  useEffect(()=>{let current=true;if(initial.id)api<Meeting>('/meetings/'+initial.id).then(m=>{if(current)setDraft(m);}).catch(e=>{if(current)setError(e.message);}).finally(()=>{if(current)setLoading(false);});return()=>{current=false;};},[initial.id]);
  function field<K extends keyof Meeting>(key:K,value:Meeting[K]){setDraft(d=>({...d,[key]:value}));setSaved(false);}
  async function save(e?:React.FormEvent){e?.preventDefault();setBusy(true);setError('');try{const m=await api<Meeting>(draft.id?'/meetings/'+draft.id:'/projects/'+draft.project_id+'/meetings',{method:draft.id?'PATCH':'POST',body:JSON.stringify(draft)});setDraft(m);setSaved(true);setTab('read');onSaved(m);}catch(e){setError(e instanceof Error?e.message:'บันทึกไม่สำเร็จ');}finally{setBusy(false);}}
- async function archive(){setBusy(true);try{await api('/meetings/'+draft.id,{method:'DELETE',body:JSON.stringify({version:draft.version})});onArchived();}catch(e){setError((e as Error).message);setArchiveConfirm(false);}finally{setBusy(false);}}
+ async function archive(){setBusy(true);try{await api('/meetings/'+draft.id,{method:'DELETE',body:JSON.stringify({version:draft.version})});onArchived(draft.id);}catch(e){setError((e as Error).message);setArchiveConfirm(false);}finally{setBusy(false);}}
  const confirmBox=archiveConfirm&&<div className="archive-confirm" role="alertdialog" aria-label="ยืนยันลบรายงาน"><p>ลบรายงาน “{draft.title}” ออกจากปฏิทิน? (ระบบเก็บสำเนาไว้ในประวัติ กู้คืนได้โดยผู้ดูแลฐานข้อมูล)</p><button type="button" className="secondary" onClick={()=>setArchiveConfirm(false)}>ไม่ลบ</button><button type="button" className="danger" disabled={busy} onClick={archive}>{busy?'กำลังลบ…':'ยืนยันลบ'}</button></div>;
  async function reload(){setLoading(true);try{setDraft(await api<Meeting>('/meetings/'+draft.id));setError('');}catch(e){setError((e as Error).message);}finally{setLoading(false);}}
  return <div className="drawer-layer"><aside ref={dialog} tabIndex={-1} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();onClose();}if(e.key==='Tab'){const nodes=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]')??[]);const first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&(document.activeElement===first||document.activeElement===dialog.current)){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}} className="drawer meeting-drawer" role="dialog" aria-modal="true" aria-label="รายงานประชุม"><header><div><small>{projects.find(p=>p.id===draft.project_id)?.name} / {dateLabel(draft.meeting_on)}</small><h1>{draft.title||'บันทึกประชุมใหม่'}</h1></div><button className="icon-button" aria-label="ปิดรายงานประชุม" onClick={onClose}>×</button></header><div className="drawer-tabs"><button className={tab==='read'?'active':''} onClick={()=>setTab('read')}>หน้าอ่าน</button>{editable&&<button className={tab==='edit'?'active':''} onClick={()=>setTab('edit')}>แก้ไข / วางสรุป AI</button>}</div>

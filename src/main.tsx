@@ -32,6 +32,10 @@ function App() {
   const [view, setView] = useState<View>(initialView);
   const [larkTargets, setLarkTargets] = useState<LarkTarget[]>([]);
   const deepLinked = useRef(false);
+  // Latest task reload wins: an older, slower reload must not overwrite newer state.
+  const taskLoadSeq = useRef(0);
+  // Board moves in flight, per task: a second move before the first returns would send a stale version (409).
+  const [moving, setMoving] = useState<number[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [query, setQuery] = useState('');
   const [feature, setFeature] = useState('');
@@ -60,13 +64,14 @@ function App() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!session?.user) return;
-    api<Project[]>('/projects').then((rows) => {
+  async function loadProjects() {
+    try {
+      const rows = await api<Project[]>('/projects');
       setProjects(rows);
       setProjectId((current) => current && rows.some((p) => p.id === current) ? current : 0);
-    }).catch((e) => setError(message(e)));
-  }, [session?.user?.id]);
+    } catch (e) { setError(message(e)); }
+  }
+  useEffect(() => { if (session?.user) loadProjects(); }, [session?.user?.id]);
 
   async function fetchTasks(rows: Project[]) {
     return (await Promise.all(rows.map(async p=>{
@@ -76,9 +81,10 @@ function App() {
     }))).flat();
   }
   async function loadTasks() {
-    try {setTasks(await fetchTasks(projects));} catch(e){setError(message(e));}
+    const seq=++taskLoadSeq.current;
+    try {const items=await fetchTasks(projects);if(seq===taskLoadSeq.current)setTasks(items);} catch(e){if(seq===taskLoadSeq.current)setError(message(e));}
   }
-  useEffect(()=>{let current=true;setLoadingTasks(true);fetchTasks(projects).then(items=>{if(current)setTasks(items);}).catch(e=>{if(current)setError(message(e));}).finally(()=>{if(current)setLoadingTasks(false);});return()=>{current=false;};},[projects]);
+  useEffect(()=>{const seq=++taskLoadSeq.current;setLoadingTasks(true);fetchTasks(projects).then(items=>{if(seq===taskLoadSeq.current)setTasks(items);}).catch(e=>{if(seq===taskLoadSeq.current)setError(message(e));}).finally(()=>setLoadingTasks(false));return()=>{taskLoadSeq.current++;};},[projects]);
   useEffect(()=>{setFeature('');setSelected(null);},[projectId]);
   useEffect(()=>{const url=new URL(location.href);url.searchParams.set('view',view);history.replaceState({},'',url);},[view]);
   // ?task=ID (links sent to Lark) opens that task once the tasks are loaded; the URL follows the open drawer.
@@ -104,34 +110,38 @@ function App() {
     try {
       const payload = { ...EMPTY_TASK, ...draft, notify: notify || null, notify_text: notifyText };
       const isExisting = 'id' in draft && draft.id > 0;
-      const saved = isExisting
+      const response = isExisting
         ? await api<Task>(`/tasks/${draft.id}`, { method: 'PATCH', body: JSON.stringify(payload) })
         : await api<Task>(`/projects/${targetProject}/tasks`, { method: 'POST', body: JSON.stringify(payload) });
-      setTasks((current) => isExisting ? current.map((t) => t.id === saved.id ? saved : t) : [...current, saved]);
-      setSelected(saved); setNotice(notify ? 'บันทึกและแจ้ง Lark แล้ว' : 'บันทึกแล้ว');
+      // Saved even when Lark refused the message (lark_warning): show the saved task so a retry cannot duplicate it.
+      const { lark_warning: warning, ...saved } = response;
+      taskLoadSeq.current++;
+      setTasks((current) => current.some((t) => t.id === saved.id) ? current.map((t) => t.id === saved.id ? saved : t) : [...current, saved]);
+      setSelected(saved);
+      if (warning) { setNotice(''); setError(warning); } else setNotice(notify ? 'บันทึกและแจ้ง Lark แล้ว' : 'บันทึกแล้ว');
     } catch (e) {
-      // 502 = saved, but Lark did not accept the message: refresh so the drawer shows the saved version.
-      if (e instanceof ApiError && e.status === 502) await loadTasks();
       setError(message(e));
       if (e instanceof ApiError && e.status === 409) await loadTasks();
     } finally { setBusy(false); }
   }
 
   async function moveTask(task: Task, status: number) {
-    if (!canEdit(task) || task.status === status) return;
-    const previous = tasks;
+    if (!canEdit(task) || task.status === status || moving.includes(task.id)) return;
     const optimistic = { ...task, status };
+    setMoving((m) => [...m, task.id]);
+    taskLoadSeq.current++;
     setTasks((current) => current.map((t) => t.id === task.id ? optimistic : t));
     try {
-      const saved = await api<Task>(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ ...EMPTY_TASK, ...optimistic }) });
+      const { lark_warning: _ignored, ...saved } = await api<Task>(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ ...EMPTY_TASK, ...optimistic }) });
       setTasks((current) => current.map((t) => t.id === saved.id ? saved : t));
-      if (selected?.id === saved.id) setSelected(saved);
+      setSelected((s) => s?.id === saved.id ? saved : s);
       setNotice(`ย้ายไป “${STATUSES[status]}” แล้ว`);
     } catch (e) {
-      setTasks(previous);
+      // Put back only this task, and only while the optimistic copy is still what the board shows.
+      setTasks((current) => current.map((t) => t === optimistic ? task : t));
       setError(message(e));
       if (e instanceof ApiError && e.status === 409) await loadTasks();
-    }
+    } finally { setMoving((m) => m.filter((id) => id !== task.id)); }
   }
 
   async function logout() {
@@ -169,7 +179,7 @@ function App() {
       <div className="profile"><span className="avatar">{session.user.label.slice(0, 1)}</span><div className="truncate"><strong>{session.user.label}</strong><small>{session.user.is_admin ? 'ผู้ดูแล' : 'สมาชิก'}</small></div><button className="icon-button" onClick={logout} title="ออกจากอุปกรณ์นี้">↪</button></div>
     </aside>
     <main className="workspace">
-      {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} /> : <>
+      {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} onProjectsChanged={loadProjects} onBack={() => setView('board')} /> : <>
         <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={()=>{const p=project?.role!=='viewer'&&project?project:writableProjects[0];if(p)setSelected({...EMPTY_TASK,id:0,project_id:p.id,version:0,actual_released_at:null,updated_at:''});}}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>
         {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:<>
         <div className="toolbar">
@@ -180,13 +190,13 @@ function App() {
           <span className="toolbar-count">{visible.length} งาน</span>
         </div>
 
-        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : <Board tasks={visible} projects={projects} canEdit={canEdit} onOpen={setSelected} onMove={moveTask} />}
+        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : <Board tasks={visible} projects={projects} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} onOpen={setSelected} onMove={moveTask} />}
         </>}
       </>}
       {notice && !error && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {error && <div className="floating-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
     </main>
-    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => setTasks((current) => current.map((t) => t.id === saved.id ? saved : t))} onDeleted={(gone) => { setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
+    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
   </div>;
 }
 
@@ -222,7 +232,7 @@ function linkState(link: AccessLink) {
   return 'รอเปิด · หมดอายุ ' + dateTime(link.expires_at);
 }
 
-function AccessManager({ projects }: { projects: Project[] }) {
+function AccessManager({ projects, onProjectsChanged, onBack }: { projects: Project[]; onProjectsChanged: () => Promise<void>; onBack: () => void }) {
   const [members, setMembers] = useState<AccessMember[]>([]);
   const [label, setLabel] = useState('');
   const [role, setRole] = useState('viewer');
@@ -239,6 +249,7 @@ function AccessManager({ projects }: { projects: Project[] }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [projectNotice, setProjectNotice] = useState('');
   const [shown, setShown] = useState<{ linkId: number; link: string } | null>(null);
   function showLink(linkId: number) {
     if (shown?.linkId === linkId) { setShown(null); return; }
@@ -271,16 +282,21 @@ function AccessManager({ projects }: { projects: Project[] }) {
   }
   function createProject(e: React.FormEvent) {
     e.preventDefault();
-    run(async () => { await api('/projects', { method: 'POST', body: JSON.stringify({ name: projectName, description }) }); location.reload(); });
+    run(async () => {
+      await api('/projects', { method: 'POST', body: JSON.stringify({ name: projectName, description }) });
+      await onProjectsChanged();
+      setProjectNotice(`สร้างโปรเจกต์ “${projectName}” แล้ว`); setProjectName(''); setDescription(''); setShowProjectForm(false);
+    });
   }
   const issuedLink = (memberId: number) => issued?.memberId === memberId && <div className="generated-link">
     <p>{issued.permanent ? 'ลิงก์ถาวร ใช้ซ้ำได้ไม่มีวันหมดอายุจนกว่าจะปิด · เปิดดูอีกครั้งได้จากปุ่ม “ดูลิงก์” ในรายการสมาชิก' : 'ลิงก์ใช้ได้ครั้งเดียวภายใน 7 วัน · แสดงครั้งเดียว กรุณาคัดลอกเก็บไว้'}</p>
     <input aria-label="ลิงก์เชิญที่สร้างแล้ว" readOnly value={issued.link} onFocus={(e) => e.target.select()} />
     <button onClick={async () => { try { await navigator.clipboard.writeText(issued.link); setCopied(true); } catch { setError('คัดลอกไม่สำเร็จ กรุณาเลือกและคัดลอกลิงก์จากช่อง'); } }}>{copied ? 'คัดลอกแล้ว' : 'คัดลอก'}</button>
   </div>;
-  return <><header className="topbar"><div><h1>การเข้าถึง</h1><span>ลิงก์เชิญและสมาชิก</span></div><div className="topbar-actions"><button className="secondary" onClick={() => setShowProjectForm(!showProjectForm)}>{showProjectForm ? 'ปิดฟอร์ม' : '+ โปรเจกต์'}</button><button className="mobile-action" onClick={() => location.reload()}>กลับบอร์ด</button></div></header>
+  return <><header className="topbar"><div><h1>การเข้าถึง</h1><span>ลิงก์เชิญและสมาชิก</span></div><div className="topbar-actions"><button className="secondary" onClick={() => setShowProjectForm(!showProjectForm)}>{showProjectForm ? 'ปิดฟอร์ม' : '+ โปรเจกต์'}</button><button className="mobile-action" onClick={onBack}>กลับบอร์ด</button></div></header>
     <div className="access-content">
       {error && <div className="alert error" role="alert">{error}</div>}
+      {projectNotice && <div className="alert success" role="status">{projectNotice}</div>}
       <section className="panel"><h2>สร้างลิงก์เชิญ</h2>
         <form onSubmit={createLink} className="access-form">
           <Field label="ชื่อผู้รับ"><input required value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ชื่อสมาชิกหรือทีม" /></Field>

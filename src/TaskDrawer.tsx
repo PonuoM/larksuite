@@ -51,10 +51,11 @@ export default function TaskDrawer({ task, projects, editable, busy, larkTargets
     catch (e) { onError(message(e)); setConfirmDelete(false); } finally { setDeleting(false); }
   }
   const [draft, setDraft] = useState(task);
-  useEffect(() => setDraft(task), [task]);
   const [tab, setTab] = useState<'details' | 'progress'>('details');
   const [notify, setNotify] = useState<Notify>('');
   const [notifyText, setNotifyText] = useState('');
+  // A new task object arrives after every successful save: show it, and do not repeat the Lark notice on the next save.
+  useEffect(() => { setDraft(task); setNotify(''); setNotifyText(''); }, [task]);
   const isNew = task.id === 0;
   function field(name: keyof Task, value: string | number | ChecklistItem[]) { setDraft((d) => ({ ...d, [name]: value })); }
   // Sub-task changes on a saved task are stored immediately; keep the rest of the unsaved form as it is.
@@ -188,7 +189,11 @@ function ProgressTab({ task, larkTargets, onError, onNotice }: { task: Task; lar
   async function send(kind: 'notes' | 'notify') {
     setBusy(true);
     try {
-      if (kind === 'notes') { await api(`/tasks/${task.id}/notes`, { method: 'POST', body: JSON.stringify({ text, notify: notify || null }) }); onNotice(notify ? 'บันทึกและส่งเข้า Lark แล้ว' : 'บันทึกความคืบหน้าแล้ว'); }
+      if (kind === 'notes') {
+        // A Lark failure still returns 201 (the note is saved) with lark_warning: clear the box so it is not sent twice.
+        const r = await api<{ lark_warning?: string }>(`/tasks/${task.id}/notes`, { method: 'POST', body: JSON.stringify({ text, notify: notify || null }) });
+        if (r.lark_warning) onError(r.lark_warning); else onNotice(notify ? 'บันทึกและส่งเข้า Lark แล้ว' : 'บันทึกความคืบหน้าแล้ว');
+      }
       else { await api(`/tasks/${task.id}/notify`, { method: 'POST', body: JSON.stringify({ notify, text }) }); onNotice('ส่งสถานะงานเข้า Lark แล้ว'); }
       setText(''); await load();
     } catch (e) { onError(message(e)); await load(); } finally { setBusy(false); }

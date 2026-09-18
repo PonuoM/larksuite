@@ -71,6 +71,8 @@ async function redeem() {
   session = { cookie, csrf: s.data.csrf, user: s.data.user };
   writeFileSync(cacheFile, JSON.stringify(session), { mode: 0o600 });
 }
+// A write that saved but whose Lark notice failed answers 2xx with data.lark_warning: report it, never retry.
+function warn(data) { if (data && data.lark_warning) console.error('⚠ ' + data.lark_warning); return data; }
 async function call(path, { method = 'GET', body } = {}, retry = true) {
   if (!session) await redeem();
   const r = await fetch(api + path, { method, headers: { Cookie: session.cookie, ...(method !== 'GET' ? { 'X-CSRF-Token': session.csrf } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -104,7 +106,7 @@ const notify = flags.notify ? { notify: flags.notify } : {};
 async function patch(t, changes) {
   const body = { ...Object.fromEntries(FIELDS.map((f) => [f, t[f] ?? ''])), status: t.status, checklist: t.checklist ?? [], version: t.version, ...changes, ...notify };
   if (body.planned_go_live_on === '') body.planned_go_live_on = null;
-  return (await call('/tasks/' + t.id, { method: 'PATCH', body })).data;
+  return warn((await call('/tasks/' + t.id, { method: 'PATCH', body })).data);
 }
 function printTask(t, events = []) {
   const lines = [`${pad(t.id)} ${t.title}`, `สถานะ: ${STATUSES[t.status]} (${t.status}) · ฟังก์ชัน: ${t.feature || '-'} · ผู้รับผิดชอบ: ${t.assignee || '-'} · เริ่มใช้: ${t.planned_go_live_on || 'ยังไม่กำหนด'} · version ${t.version}`];
@@ -114,7 +116,7 @@ function printTask(t, events = []) {
   lines.push('', `ลิงก์: ${site}/?view=board&task=${t.id}`);
   return lines.join('\n');
 }
-async function subtask(id, body, label) { const t = (await call(`/tasks/${Number(id)}/subtasks`, { method: 'POST', body: { ...body, ...notify } })).data; out(t, `✓ ${label}${prog(t)} ${pad(t.id)} ${t.title}`); }
+async function subtask(id, body, label) { const t = warn((await call(`/tasks/${Number(id)}/subtasks`, { method: 'POST', body: { ...body, ...notify } })).data); out(t, `✓ ${label}${prog(t)} ${pad(t.id)} ${t.title}`); }
 
 // ---- commands
 switch (command) {
@@ -147,7 +149,7 @@ switch (command) {
     const ps = await projects(); const p = ps.find((x) => String(x.id) === args[0] || x.name.toLowerCase() === String(args[0]).toLowerCase());
     if (!p) fail('ไม่พบโปรเจกต์ ' + args[0]); if (!args[1]) fail('ใส่ชื่องาน');
     const body = { ...Object.fromEntries(FIELDS.map((f) => [f, ''])), planned_go_live_on: null, status: Number(flags.status ?? 0), title: args[1], ...parseFields(args.slice(2)), checklist: subs.map((label) => ({ label, done: false })), ...notify };
-    const t = (await call(`/projects/${p.id}/tasks`, { method: 'POST', body })).data; out(t, `✓ สร้าง ${pad(t.id)} ${t.title}${prog(t)}\n${site}/?view=board&task=${t.id}`); break;
+    const t = warn((await call(`/projects/${p.id}/tasks`, { method: 'POST', body })).data); out(t, `✓ สร้าง ${pad(t.id)} ${t.title}${prog(t)}\n${site}/?view=board&task=${t.id}`); break;
   }
   case 'notify': { if (!['test', 'main'].includes(args[1])) fail('เลือก test หรือ main'); const r = await call(`/tasks/${Number(args[0])}/notify`, { method: 'POST', body: { notify: args[1], text: args[2] ?? '' } }); out(r.data, '✓ ' + r.message); break; }
   default: fail('ไม่รู้จักคำสั่ง ' + command + ' — ดู node scripts/wb.mjs help');
