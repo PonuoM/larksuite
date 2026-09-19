@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Project, Task } from './types';
 import { KINDS, progress, STATUSES as statuses, STATUS_ORDER } from './TaskDrawer';
 export function today() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year:'numeric',month:'2-digit',day:'2-digit' }).format(new Date()); }
@@ -15,6 +15,18 @@ const DAY_NAMES=['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'];
 // Status colours for charts (board order). Kept apart from the board's column dots on purpose: charts need more contrast.
 const STATUS_COLOR:Record<number,string>={6:'#f59e0b',0:'#cbd5e1',1:'#3b82f6',3:'#8b5cf6',4:'#84cc16'};
 const KIND_KEYS=[...Object.keys(KINDS),''];
+// Motion: numbers count to their value, bars and arcs grow from zero once, then glide when a filter changes.
+// Everything is skipped when the viewer asks for reduced motion.
+const reducedMotion=()=>typeof window!=='undefined'&&!!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const stagger=(i:number)=>({'--i':i}) as CSSProperties;
+function useGrown(){const [on,setOn]=useState(false);useEffect(()=>{let b=0;const a=requestAnimationFrame(()=>{b=requestAnimationFrame(()=>setOn(true));});return ()=>{cancelAnimationFrame(a);cancelAnimationFrame(b);};},[]);return on;}
+function Num({value,ms=700}:{value:number;ms?:number}) {
+ const [shown,setShown]=useState(0);const from=useRef(0);
+ useEffect(()=>{if(reducedMotion()){from.current=value;setShown(value);return;}const start=performance.now(),a=from.current;let id=0;
+  const step=(now:number)=>{const k=Math.min(1,(now-start)/ms);const v=a+(value-a)*(1-Math.pow(1-k,3));from.current=v;setShown(v);if(k<1)id=requestAnimationFrame(step);};
+  id=requestAnimationFrame(step);return ()=>cancelAnimationFrame(id);},[value,ms]);
+ return <>{Math.round(shown)}</>;
+}
 
 // Overview and weekly report as a card dashboard (owner, 2026-09-19): every number and chart comes from the tasks the
 // viewer can see; nothing is sample data. The week picker drives the trend highlight, the schedule and the download.
@@ -68,14 +80,14 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
    <div className="dash-main">
     <section className="dash-card dash-hero" aria-label="ตัวเลขหลัก">
      <div className="dash-kpis">
-      <div><div className="dash-big">{active.length}</div><span>งานยังไม่จบ</span></div>
-      <div><div className="dash-big">{delivered.length}{prevDelivered+delivered.length>0&&<em className={delta>=0?'up':'down'} title="เทียบกับสัปดาห์ก่อน">{delta>=0?'↑':'↓'} {Math.abs(delta)}</em>}</div><span>เปิดใช้ในสัปดาห์ที่เลือก</span></div>
-      <div><div className="dash-big">{subDone.total?Math.round(subDone.done/subDone.total*100):0}<small>%</small></div><span>งานย่อยเสร็จ {subDone.done}/{subDone.total}</span></div>
+      <div><div className="dash-big"><Num value={active.length}/></div><span>งานยังไม่จบ</span></div>
+      <div><div className="dash-big"><Num value={delivered.length}/>{prevDelivered+delivered.length>0&&<em className={delta>=0?'up':'down'} title="เทียบกับสัปดาห์ก่อน">{delta>=0?'↑':'↓'} {Math.abs(delta)}</em>}</div><span>เปิดใช้ในสัปดาห์ที่เลือก</span></div>
+      <div><div className="dash-big"><Num value={subDone.total?Math.round(subDone.done/subDone.total*100):0}/><small>%</small></div><span>งานย่อยเสร็จ {subDone.done}/{subDone.total}</span></div>
      </div>
      <div className="dash-mini-kpis">
-      <button onClick={()=>setFocus('approval')}><b style={{background:STATUS_COLOR[6]}}/>รออนุมัติ <strong>{awaitingApproval.length}</strong></button>
-      <button onClick={()=>setFocus('blocked')}><b style={{background:'#f43f5e'}}/>ติดขัด <strong>{blockers.length}</strong></button>
-      <button onClick={()=>setFocus('late')}><b style={{background:'#fb923c'}}/>เลยกำหนด <strong>{overdue.length}</strong></button>
+      <button onClick={()=>setFocus('approval')}><b style={{background:STATUS_COLOR[6]}}/>รออนุมัติ <strong><Num value={awaitingApproval.length}/></strong></button>
+      <button onClick={()=>setFocus('blocked')}><b style={{background:'#f43f5e'}}/>ติดขัด <strong><Num value={blockers.length}/></strong></button>
+      <button onClick={()=>setFocus('late')}><b style={{background:'#fb923c'}}/>เลยกำหนด <strong><Num value={overdue.length}/></strong></button>
      </div>
      <StatusBar counts={statusCounts}/>
     </section>
@@ -84,7 +96,7 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
     <KindChart tasks={scoped}/>
     <section className="dash-card dash-attention">
      <header className="dash-card-head"><h2>ต้องดูตอนนี้</h2><div className="dash-tabs" role="group" aria-label="เรื่องที่ต้องติดตาม">{([['approval','รออนุมัติ'],['blocked','ติดขัด'],['late','เลยกำหนด']] as const).map(([key,label])=><button key={key} aria-pressed={effectiveFocus===key} onClick={()=>{setFocus(key);setShowAllAttention(false);}} disabled={!attention[key].length}>{label}<b>{attention[key].length}</b></button>)}</div></header>
-     {attentionItems.length?<div className="dash-rows">{(showAllAttention?attentionItems:attentionItems.slice(0,5)).map(t=><button className="dash-row" key={t.id} onClick={()=>onOpen(t)}><span className="dash-row-id">#{t.id}</span><span className="dash-row-main"><strong>{t.title}</strong><small>{projectName(t)}{t.assignee?' · '+t.assignee:''}</small></span><span className="dash-row-reason">{reason(t)}</span><span className="dash-row-go" aria-hidden="true">↗</span></button>)}{attentionItems.length>5&&<button className="dash-more" onClick={()=>setShowAllAttention(!showAllAttention)}>{showAllAttention?'แสดงน้อยลง':`ดูอีก ${attentionItems.length-5} งาน`}</button>}</div>:<p className="dash-empty">ไม่มีงานรออนุมัติ ติดขัด หรือเลยกำหนดในข้อมูลที่คุณเห็น</p>}
+     {attentionItems.length?<div className="dash-rows" key={effectiveFocus+(projectId??0)}>{(showAllAttention?attentionItems:attentionItems.slice(0,5)).map((t,i)=><button className="dash-row" style={stagger(i)} key={t.id} onClick={()=>onOpen(t)}><span className="dash-row-id">#{t.id}</span><span className="dash-row-main"><strong>{t.title}</strong><small>{projectName(t)}{t.assignee?' · '+t.assignee:''}</small></span><span className="dash-row-reason">{reason(t)}</span><span className="dash-row-go" aria-hidden="true">↗</span></button>)}{attentionItems.length>5&&<button className="dash-more" onClick={()=>setShowAllAttention(!showAllAttention)}>{showAllAttention?'แสดงน้อยลง':`ดูอีก ${attentionItems.length-5} งาน`}</button>}</div>:<p className="dash-empty">ไม่มีงานรออนุมัติ ติดขัด หรือเลยกำหนดในข้อมูลที่คุณเห็น</p>}
     </section>
     <StatusDonut counts={statusCounts}/>
     <section className="dash-card dash-projects">
@@ -92,9 +104,9 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
      <div className="dash-project-list">{shownProjects.map(p=>{const pt=scoped.filter(t=>t.project_id===p.id);const open=pt.filter(t=>t.status!==4);const done=pt.length-open.length;const pct=pt.length?Math.round(done/pt.length*100):0;return <details className="dash-project" key={p.id}><summary>
       <span className="dash-project-name"><strong>{p.name}</strong><small>{open.length?`${open.length} งานยังไม่จบ`:'ไม่มีงานค้างในข้อมูลนี้'}</small></span>
       <StatusBar counts={STATUS_ORDER.map(s=>({s,n:pt.filter(t=>t.status===s).length}))} compact/>
-      <span className="dash-project-pct"><strong>{pct}%</strong><small>เปิดใช้แล้ว</small></span>
+      <span className="dash-project-pct"><strong><Num value={pct}/>%</strong><small>เปิดใช้แล้ว</small></span>
       <span className="dash-chevron" aria-hidden="true">⌄</span>
-     </summary><div className="dash-project-detail"><p>{STATUS_ORDER.map(s=>`${statuses[s]} ${pt.filter(t=>t.status===s).length}`).join(' · ')}</p>{open.length?open.map(t=><button className="dash-row" key={t.id} onClick={()=>onOpen(t)}><span className="dash-row-id">#{t.id}</span><span className="dash-row-main"><strong>{t.title}</strong><small>{statuses[t.status]+sub(t)}{t.assignee?' · '+t.assignee:''}</small></span><span className="dash-row-reason">{t.blocked_reason||''}</span><span className="dash-row-go" aria-hidden="true">↗</span></button>):<p className="dash-empty">ไม่มีงานค้าง</p>}<button className="dash-more" onClick={()=>onProject(p.id,true)}>เปิดบอร์ด {p.name} ↗</button></div></details>;})}</div>
+     </summary><div className="dash-project-detail"><p>{STATUS_ORDER.map(s=>`${statuses[s]} ${pt.filter(t=>t.status===s).length}`).join(' · ')}</p>{open.length?open.map((t,i)=><button className="dash-row" style={stagger(Math.min(i,8))} key={t.id} onClick={()=>onOpen(t)}><span className="dash-row-id">#{t.id}</span><span className="dash-row-main"><strong>{t.title}</strong><small>{statuses[t.status]+sub(t)}{t.assignee?' · '+t.assignee:''}</small></span><span className="dash-row-reason">{t.blocked_reason||''}</span><span className="dash-row-go" aria-hidden="true">↗</span></button>):<p className="dash-empty">ไม่มีงานค้าง</p>}<button className="dash-more" onClick={()=>onProject(p.id,true)}>เปิดบอร์ด {p.name} ↗</button></div></details>;})}</div>
     </section>
    </div>
    <WeekSchedule tasks={scoped} start={start} projectName={projectName} onOpen={onOpen}/>
@@ -103,10 +115,10 @@ export default function ProjectViews({ projects, tasks, projectId, onProject, on
 }
 
 function StatusBar({counts,compact}:{counts:{s:number;n:number}[];compact?:boolean}) {
- const total=counts.reduce((a,c)=>a+c.n,0);
+ const total=counts.reduce((a,c)=>a+c.n,0);const grown=useGrown();
  return <div className={'dash-statusbar'+(compact?' compact':'')}>
-  <div className="dash-statusbar-track" role="img" aria-label={counts.map(c=>statuses[c.s]+' '+c.n).join(', ')}>{total?counts.filter(c=>c.n).map(c=><i key={c.s} title={statuses[c.s]+' '+c.n} style={{flexGrow:c.n,background:STATUS_COLOR[c.s]}}/>):<i style={{flexGrow:1}}/>}</div>
-  {!compact&&<ul className="dash-statusbar-legend">{counts.map(c=><li key={c.s}><b style={{background:STATUS_COLOR[c.s]}}/>{statuses[c.s]}<strong>{c.n}</strong></li>)}</ul>}
+  <div className="dash-statusbar-track" role="img" aria-label={counts.map(c=>statuses[c.s]+' '+c.n).join(', ')}>{counts.map(c=><i key={c.s} title={statuses[c.s]+' '+c.n} className={c.n?'':'zero'} style={{flexGrow:grown?c.n:0,background:STATUS_COLOR[c.s]}}/>)}{!total&&<i className="empty" style={{flexGrow:1}}/>}</div>
+  {!compact&&<ul className="dash-statusbar-legend">{counts.map(c=><li key={c.s}><b style={{background:STATUS_COLOR[c.s]}}/>{statuses[c.s]}<strong><Num value={c.n}/></strong></li>)}</ul>}
  </div>;
 }
 
@@ -120,10 +132,10 @@ function ActivityHeatmap({tasks,anchor}:{tasks:Task[];anchor:string}) {
  const total=cells.reduce((a,c)=>a+c.n,0);
  const level=(n:number)=>n===0?0:Math.min(4,Math.ceil(n/max*4));
  return <section className="dash-card dash-heat">
-  <header className="dash-card-head"><h2>ความเคลื่อนไหว</h2><small>{total} ครั้ง · 12 สัปดาห์</small></header>
+  <header className="dash-card-head"><h2>ความเคลื่อนไหว</h2><small><Num value={total}/> ครั้ง · 12 สัปดาห์</small></header>
   <div className="dash-heat-grid">
    <div className="dash-heat-days">{DAY_NAMES.map((d,i)=><span key={d}>{i%2===0?d:''}</span>)}</div>
-   <div className="dash-heat-cells">{cells.map(c=><i key={c.day} className={'l'+level(c.n)+(c.future?' future':'')} title={shortDate(c.day)+' · '+c.n+' ครั้ง'}/>)}</div>
+   <div className="dash-heat-cells">{cells.map((c,i)=><i key={i} style={stagger(Math.floor(i/7)+i%7)} className={'l'+level(c.n)+(c.future?' future':'')} title={shortDate(c.day)+' · '+c.n+' ครั้ง'}/>)}</div>
   </div>
   <div className="dash-heat-foot"><span>{shortDate(first)}</span><span className="dash-heat-legend">น้อย<i className="l1"/><i className="l2"/><i className="l3"/><i className="l4"/>มาก</span><span>{shortDate(addDays(anchor,6))}</span></div>
   <p className="dash-caption">นับจากงานย่อยที่เสร็จ วันเปิดใช้ และการแก้ไขล่าสุดของแต่ละงาน</p>
@@ -147,19 +159,24 @@ function TrendChart({tasks,start,onWeek}:{tasks:Task[];start:string;onWeek:(d:st
  const planned=data.map((d,i)=>[x(i),y(d.planned)] as [number,number]);
  const actual=data.flatMap((d,i)=>d.actual===null?[]:[[x(i),y(d.actual)] as [number,number]]);
  const sel=5;const colW=(W-L-R)/data.length;
+ // Replays the left-to-right reveal whenever the plotted numbers change.
+ const sig=data.map(d=>d.planned+':'+d.actual).join(',')+'|'+start;
  return <section className="dash-card dash-trend">
   <header className="dash-card-head"><h2>กำหนดเริ่มใช้ vs เปิดใช้จริง</h2><div className="dash-legend"><span><b className="dot planned"/>ตามกำหนด</span><span><b className="dot actual"/>เปิดใช้จริง</span></div></header>
   <svg viewBox={`0 0 ${W} ${H}`} className="dash-svg" role="img" aria-label={data.map(d=>`สัปดาห์ ${shortDate(d.w)}: กำหนด ${d.planned} เปิดใช้ ${d.actual??'-'}`).join('; ')}>
    <defs>
     <linearGradient id="dashActualFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3b82f6" stopOpacity=".22"/><stop offset="1" stopColor="#3b82f6" stopOpacity="0"/></linearGradient>
     <linearGradient id="dashSel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3b82f6" stopOpacity=".04"/><stop offset="1" stopColor="#3b82f6" stopOpacity=".14"/></linearGradient>
+    <clipPath id="dashReveal"><rect key={sig} className="reveal" x="0" y="0" width={W} height={H}/></clipPath>
    </defs>
    {[0,.25,.5,.75,1].map(f=><g key={f}><line x1={L} x2={W-R} y1={y(yMax*f)} y2={y(yMax*f)} className="grid"/><text x={L-8} y={y(yMax*f)+4} textAnchor="end" className="axis">{Math.round(yMax*f)}</text></g>)}
-   <rect x={x(sel)-colW/2+6} y={T-14} width={colW-12} height={H-T-B+14} rx="10" fill="url(#dashSel)"/>
+   <rect className="sel-col" x={x(sel)-colW/2+6} y={T-14} width={colW-12} height={H-T-B+14} rx="10" fill="url(#dashSel)"/>
+   <g clipPath="url(#dashReveal)">
    {actual.length>1&&<path d={smooth(actual)+` L${actual.at(-1)![0]},${y(0)} L${actual[0][0]},${y(0)} Z`} fill="url(#dashActualFill)"/>}
    <path d={smooth(planned)} className="line-planned"/>
    {actual.length>1&&<path d={smooth(actual)} className="line-actual"/>}
-   {data[sel].actual!==null&&<g><circle cx={x(sel)} cy={y(data[sel].actual!)} r="7" className="knob"/><text x={x(sel)} y={y(data[sel].actual!)-14} textAnchor="middle" className="knob-label">{data[sel].actual} งาน</text></g>}
+   </g>
+   {data[sel].actual!==null&&<g key={sig} className="knob-group"><circle cx={x(sel)} cy={y(data[sel].actual!)} r="7" className="knob"/><text x={x(sel)} y={y(data[sel].actual!)-14} textAnchor="middle" className="knob-label">{data[sel].actual} งาน</text></g>}
    {data.map((d,i)=><g key={d.w} className="week-hit" onClick={()=>onWeek(d.w)}><rect x={x(i)-colW/2} y={0} width={colW} height={H} fill="transparent"><title>{`สัปดาห์ ${shortDate(d.w)} · กำหนด ${d.planned} · เปิดใช้ ${d.actual??'-'}`}</title></rect><text x={x(i)} y={H-8} textAnchor="middle" className={'axis'+(i===sel?' on':'')}>{shortDate(d.w)}</text></g>)}
   </svg>
  </section>;
@@ -168,29 +185,29 @@ function TrendChart({tasks,start,onWeek}:{tasks:Task[];start:string;onWeek:(d:st
 function KindChart({tasks}:{tasks:Task[]}) {
  const data=KIND_KEYS.map(k=>{const items=tasks.filter(t=>(KINDS[t.kind]?t.kind:'')===k);return {k,label:KINDS[k]??'ไม่ระบุ',open:items.filter(t=>t.status!==4).length,done:items.filter(t=>t.status===4).length};}).filter(d=>d.k||d.open+d.done);
  const max=Math.max(1,...data.map(d=>d.open+d.done));
- const peak=data.reduce((a,d)=>d.open>a.open?d:a,data[0]);
+ const peak=data.reduce((a,d)=>d.open>a.open?d:a,data[0]);const grown=useGrown();
  return <section className="dash-card dash-kinds">
   <header className="dash-card-head"><h2>ประเภทงาน</h2><div className="dash-legend"><span><b className="dot open"/>ค้าง</span><span><b className="dot done"/>เปิดใช้แล้ว</span></div></header>
   <div className="dash-bars">{data.map(d=><div className="dash-bar" key={d.k||'none'} title={`${d.label}: ค้าง ${d.open} · เปิดใช้แล้ว ${d.done}`}>
-   {d===peak&&d.open>0&&<span className="dash-bar-tip">{d.open} ค้าง</span>}<div className="dash-bar-track"><i className="done" style={{height:d.done/max*100+'%'}}/><i className="open" style={{height:d.open/max*100+'%'}}/></div>
-   <strong>{d.open+d.done}</strong><small>{d.label}</small>
+   {d===peak&&d.open>0&&<span className="dash-bar-tip" key={d.open}>{d.open} ค้าง</span>}<div className="dash-bar-track"><i className="done" style={{height:(grown?d.done/max*100:0)+'%'}}/><i className="open" style={{height:(grown?d.open/max*100:0)+'%'}}/></div>
+   <strong><Num value={d.open+d.done}/></strong><small>{d.label}</small>
   </div>)}</div>
  </section>;
 }
 
 function StatusDonut({counts}:{counts:{s:number;n:number}[]}) {
  const total=counts.reduce((a,c)=>a+c.n,0);const r=62,C=2*Math.PI*r,gap=total>1?6:0;
- let offset=0;
- const arcs=counts.filter(c=>c.n).map(c=>{const len=c.n/total*C;const arc={s:c.s,dash:Math.max(len-gap,1),offset};offset+=len;return arc;});
+ let offset=0;const grown=useGrown();
+ const arcs=counts.map(c=>{const len=total?c.n/total*C:0;const arc={s:c.s,n:c.n,dash:c.n&&grown?Math.max(len-gap,1):0,offset:grown?offset:0};offset+=len;return arc;});
  return <section className="dash-card dash-donut">
   <header className="dash-card-head"><h2>สถานะงาน</h2><small>ทั้งหมด</small></header>
   <div className="dash-donut-body">
    <svg viewBox="0 0 180 180" role="img" aria-label={counts.map(c=>statuses[c.s]+' '+c.n).join(', ')}>
     <circle cx="90" cy="90" r={r} className="donut-track"/>
-    {arcs.map(a=><circle key={a.s} cx="90" cy="90" r={r} fill="none" stroke={STATUS_COLOR[a.s]} strokeWidth="22" strokeLinecap="round" strokeDasharray={`${a.dash} ${C}`} strokeDashoffset={-a.offset} transform="rotate(-90 90 90)"><title>{statuses[a.s]} {counts.find(c=>c.s===a.s)!.n}</title></circle>)}
-    <text x="90" y="88" textAnchor="middle" className="donut-total">{total}</text><text x="90" y="108" textAnchor="middle" className="donut-sub">งาน</text>
+    {arcs.map(a=><circle key={a.s} cx="90" cy="90" r={r} fill="none" stroke={STATUS_COLOR[a.s]} strokeWidth="22" strokeLinecap="round" className={'donut-arc'+(a.dash?'':' zero')} style={{strokeDasharray:`${a.dash} ${C}`,strokeDashoffset:-a.offset}} transform="rotate(-90 90 90)"><title>{`${statuses[a.s]} ${a.n}`}</title></circle>)}
+    <text x="90" y="88" textAnchor="middle" className="donut-total"><Num value={total}/></text><text x="90" y="108" textAnchor="middle" className="donut-sub">งาน</text>
    </svg>
-   <ul className="dash-donut-legend">{counts.map(c=><li key={c.s}><b style={{background:STATUS_COLOR[c.s]}}/>{statuses[c.s]}<strong>{c.n}</strong></li>)}</ul>
+   <ul className="dash-donut-legend">{counts.map(c=><li key={c.s}><b style={{background:STATUS_COLOR[c.s]}}/>{statuses[c.s]}<strong><Num value={c.n}/></strong></li>)}</ul>
   </div>
  </section>;
 }
@@ -210,7 +227,7 @@ function WeekSchedule({tasks,start,projectName,onOpen}:{tasks:Task[];start:strin
   <header className="dash-card-head"><h2>ตารางสัปดาห์</h2><small>{shortDate(start)} – {shortDate(days[6])}</small></header>
   <div className="dash-days" role="group" aria-label="เลือกวัน">{days.map((d,i)=>{const n=items.filter(x=>x.d===d).length;return <button key={d} aria-pressed={day===d} className={d===today()?'today':''} onClick={()=>setPick(day===d?null:d)}><span>{DAY_NAMES[i]}</span><strong>{Number(d.slice(8))}</strong>{n>0&&<i/>}</button>;})}</div>
   <p className="dash-caption">{day?'แสดงเฉพาะ '+dateLabel(day)+' · แตะอีกครั้งเพื่อดูทั้งสัปดาห์':'รายการเปิดใช้จริงและวันกำหนดเริ่มใช้ในสัปดาห์นี้'}</p>
-  <div className="dash-timeline">{shown.length?shown.map(({d,t,kind},i)=><div className="dash-slot" key={kind+t.id}>
+  <div className="dash-timeline" key={start+(day??'')}>{shown.length?shown.map(({d,t,kind},i)=><div className="dash-slot" style={stagger(Math.min(i,10))} key={kind+t.id}>
    <span className="dash-slot-time">{i===0||shown[i-1].d!==d?shortDate(d):''}</span>
    <button className={'dash-event '+kind} onClick={()=>onOpen(t)}><span className="dash-event-kind">{label[kind]}</span><strong>{t.title}</strong><small>#{t.id} · {projectName(t)}{t.assignee?' · '+t.assignee:''}</small></button>
   </div>):<p className="dash-empty">ไม่มีรายการในช่วงนี้</p>}</div>
