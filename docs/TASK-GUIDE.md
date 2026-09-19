@@ -80,6 +80,7 @@
 set WORKBOARD_LINK=https://larksuite.prima49.com/#invite=…       (PowerShell: $env:WORKBOARD_LINK="…")
 node scripts/wb.mjs tasks --project "Mini ERP" --open             งานที่ยังไม่จบ
 node scripts/wb.mjs show 70                                       อ่านงานเต็ม + id งานย่อย
+node scripts/wb.mjs tasks --q "#105"                              หางานจากเลขงาน (บนหน้าเว็บพิมพ์ #105 ในช่องค้นหาได้เหมือนกัน)
 node scripts/wb.mjs sub-add 70 "ทำ API ประวัติการโทร"
 node scripts/wb.mjs sub-done 70 a1b2c3d4 --note "commit 1a2b3c"
 node scripts/wb.mjs note 70 "ทำหน้า list เสร็จ ต่อไปทำ API" --notify test

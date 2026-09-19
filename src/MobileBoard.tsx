@@ -40,7 +40,7 @@ export default function MobileBoard({ tasks, projects, developers, projectId, qu
       </div>
       {canCreate && <button className="mboard-add" onClick={onNew} aria-label="งานใหม่"><span aria-hidden="true">＋</span> เพิ่มงาน</button>}
     </header>
-    <div className="mboard-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input className="mboard-search" aria-label="ค้นหางาน" placeholder="ค้นหาชื่องานหรือฟังก์ชัน" value={query} onChange={(e) => onQuery(e.target.value)} />{query && <button aria-label="ล้างคำค้น" onClick={() => onQuery('')}>×</button>}</div>
+    <div className="mboard-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input className="mboard-search" aria-label="ค้นหางาน" placeholder="ค้นหาชื่องาน ฟังก์ชัน หรือ #เลขงาน" value={query} onChange={(e) => onQuery(e.target.value)} />{query && <button aria-label="ล้างคำค้น" onClick={() => onQuery('')}>×</button>}</div>
     <div className="mboard-viewbar"><span>{tasks.length} งาน</span><div className="mboard-layout" role="group" aria-label="รูปแบบงาน"><button aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>รายการ</button><button aria-pressed={layout === 'board'} onClick={() => setLayout('board')}>บอร์ด</button></div></div>
     <div className="mboard-chips" role="group" aria-label="กรองสถานะ">
       <button aria-pressed={status === null} className={status === null ? 'on' : ''} onClick={() => setStatus(null)}>ทั้งหมด</button>

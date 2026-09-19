@@ -134,7 +134,11 @@ switch (command) {
     let items = await allTasks(want.map((p) => p.id));
     if (flags.status !== undefined) items = items.filter((t) => t.status === Number(flags.status));
     if (flags.open) items = items.filter((t) => t.status !== 4);
-    if (flags.q) items = items.filter((t) => `${t.title} ${t.feature ?? ''} ${t.public_summary}`.toLowerCase().includes(String(flags.q).toLowerCase()));
+    if (flags.q) {
+      // "#105" matches the task number only; a bare "105" matches the number or text.
+      const q = String(flags.q).trim(), num = q.match(/^(#?)0*(\d+)$/);
+      items = items.filter((t) => (num && t.id === Number(num[2])) || (!num?.[1] && `${t.title} ${t.feature ?? ''} ${t.public_summary}`.toLowerCase().includes(q.toLowerCase())));
+    }
     const name = (id) => ps.find((p) => p.id === id)?.name;
     out(items, items.map((t) => `${pad(t.id)}  ${STATUSES[t.status].padEnd(14)} ${name(t.project_id)} · ${t.feature || 'ทั่วไป'} · ${t.title}${prog(t)}${t.blocked_reason ? '  ⚠ ' + t.blocked_reason : ''}`).join('\n') + `\n(${items.length} งาน)`);
     break;

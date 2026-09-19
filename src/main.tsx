@@ -10,6 +10,7 @@ import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
 import MobileBoard from './MobileBoard';
 import TaskTable from './TaskTable';
+import { isNumberHit, matchesQuery } from './task-search';
 import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, approvable, decide, Field, ProgressBar, TaskTags, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
 type View = 'board' | 'overview' | 'calendar' | 'settings';
@@ -120,10 +121,10 @@ function App() {
   const scopedTasks=tasks.filter(t=>!projectId||t.project_id===projectId);
   const features = useMemo(() => [...new Set(scopedTasks.map((t) => t.feature).filter(Boolean))] as string[], [tasks, projectId]);
   const visible = scopedTasks.filter((task) =>
-    (!query || `${task.title} ${task.public_summary} ${task.feature ?? ''}`.toLowerCase().includes(query.toLowerCase())) &&
+    matchesQuery(task, query) &&
     (!feature || task.feature === feature) &&
     (!developerFilter || (task.developer_ids ?? []).includes(developerFilter)) &&
-    (showDone || task.status !== 4 || (task.actual_released_at ?? '').slice(0, 10) >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
+    (showDone || task.status !== 4 || isNumberHit(task, query) || (task.actual_released_at ?? '').slice(0, 10) >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
   );
 
   async function saveTask(draft: Task | typeof EMPTY_TASK, notify: Notify = '', notifyText = '') {
@@ -228,7 +229,7 @@ function App() {
           <select aria-label="โปรเจกต์" value={projectId ?? 0} onChange={(e) => setProjectId(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <select aria-label="ฟังก์ชัน" value={feature} onChange={(e) => setFeature(e.target.value)}><option value="">ทุกฟังก์ชัน</option>{features.map((f) => <option key={f}>{f}</option>)}</select>
           {developers.length > 0 && tasks.some((t) => t.developer_ids) && <select aria-label="ผู้พัฒนา" value={developerFilter} onChange={(e) => setDeveloperFilter(Number(e.target.value))}><option value={0}>ทุกผู้พัฒนา</option>{developers.map((d) => <option key={d.id} value={d.id}>{d.name}{d.active ? '' : ' (ปิดใช้)'}</option>)}</select>}
-          <input aria-label="ค้นหางาน" placeholder="ค้นหางาน…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input aria-label="ค้นหางาน" placeholder="ค้นหางาน หรือเลขงาน เช่น #105" value={query} onChange={(e) => setQuery(e.target.value)} />
           <label><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> งานเสร็จเก่า</label>
           <span className="toolbar-count">{visible.length} งาน</span>
           <div className="layout-toggle" role="group" aria-label="รูปแบบการแสดง"><button type="button" aria-pressed={layout === 'kanban'} onClick={() => setLayout('kanban')}>Kanban</button><button type="button" aria-pressed={layout === 'table'} onClick={() => setLayout('table')}>ตาราง</button></div>
