@@ -89,6 +89,24 @@ try {
     if(query('UPDATE principals SET can_approve=? WHERE id=? AND revoked_at IS NULL',[$d['can_approve']?1:0,(int)$m[1]])->rowCount()!==1&&!query('SELECT id FROM principals WHERE id=? AND revoked_at IS NULL',[(int)$m[1]])->fetch())reply(404,'ไม่พบสมาชิกที่ยังใช้งานได้');
     reply(200,$d['can_approve']?'ให้สิทธิ์ผู้อนุมัติแล้ว':'ยกเลิกสิทธิ์ผู้อนุมัติแล้ว',['id'=>(int)$m[1],'can_approve'=>$d['can_approve']]);
  }
+ // Access lives on the member, not the link: replacing the member's projects applies to every link and open session at once.
+ if(preg_match('~^/access/(\d+)/projects$~',$route,$m)&&$method==='POST') {
+    requireAdmin($u);$pid=(int)$m[1];$d=body();$role=$d['role']??'';$ids=$d['project_ids']??null;
+    if(!in_array($role,['editor','viewer'],true))reply(422,'สิทธิ์ไม่ถูกต้อง');
+    if(!is_array($ids)||!count($ids)||count($ids)>500)reply(422,'กรุณาเลือกอย่างน้อยหนึ่งโปรเจกต์');
+    $projects=[];
+    foreach($ids as $id) {
+       if(!is_int($id)||$id<1)reply(422,'โปรเจกต์ไม่ถูกต้อง');
+       roleFor($u,$id);$projects[$id]=$id;
+    }
+    $member=query('SELECT is_admin FROM principals WHERE id=? AND revoked_at IS NULL',[$pid])->fetch();
+    if(!$member)reply(404,'ไม่พบสมาชิกที่ยังใช้งานได้');
+    if((int)$member['is_admin'])reply(422,'ผู้ดูแลเข้าถึงทุกโปรเจกต์อยู่แล้ว');
+    db()->beginTransaction();
+    query('DELETE FROM memberships WHERE principal_id=?',[$pid]);
+    foreach($projects as $projectId)query('INSERT INTO memberships(principal_id,project_id,role) VALUES(?,?,?)',[$pid,$projectId,$role]);
+    db()->commit();reply(200,'บันทึกโปรเจกต์ที่เข้าถึงได้แล้ว มีผลกับทุกลิงก์ของสมาชิกนี้',['id'=>$pid,'role'=>$role,'project_ids'=>array_values($projects)]);
+ }
  if(preg_match('~^/access/(\d+)/revoke$~',$route,$m)&&$method==='POST') {
     requireAdmin($u);$id=(int)$m[1];if($id===(int)$u['id'])reply(422,'ยกเลิกสิทธิ์ของตัวเองไม่ได้');
     db()->beginTransaction();query('UPDATE principals SET revoked_at=UTC_TIMESTAMP() WHERE id=?',[$id]);query('UPDATE invitations SET revoked_at=UTC_TIMESTAMP() WHERE principal_id=?',[$id]);query('DELETE FROM access_sessions WHERE principal_id=?',[$id]);db()->commit();reply(200,'ยกเลิกทั้งลิงก์และ session แล้ว');

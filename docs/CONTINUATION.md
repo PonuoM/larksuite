@@ -62,7 +62,7 @@ Validation: node tests/api.mjs, node tests/report-format.mjs, node tests/present
 งานถัดไป: ปุ่มเปลี่ยนสถานะบนการ์ดสำหรับ touch/keyboard, ตัวกรองผู้รับผิดชอบ, evidence แยกรายการพร้อม source/checked_at
 
 ## ล่าสุด: ลิงก์ถาวร
-Migration 003_permanent_links.sql รันบน local แล้ว ห้ามรันซ้ำ (invitations.reusable/last_used_at, expires_at nullable, access_sessions.invitation_id) API: POST /access รับ permanent, POST /access/{id}/links, POST /access/links/{id}/close; GET /access คืนสมาชิกพร้อม projects/links
+Migration 003_permanent_links.sql รันบน local แล้ว ห้ามรันซ้ำ (invitations.reusable/last_used_at, expires_at nullable, access_sessions.invitation_id) API: POST /access รับ permanent, POST /access/{id}/links, POST /access/links/{id}/close; GET /access คืนสมาชิกพร้อม projects/links; POST /access/{id}/projects {role: viewer|editor, project_ids} แทนที่โปรเจกต์ของสมาชิก (สิทธิ์อยู่ที่สมาชิก ไม่ใช่ลิงก์ จึงมีผลกับทุกลิงก์/session ทันที)
 
 ## ล่าสุด: ปฏิทินแบบ WorkAlljob
 src/MeetingCalendar.tsx (โครงหน้าใหม่ + MeetingDrawer เดิม) และ src/calendar-items.ts (ตรรกะวางรายการลงวัน ทดสอบด้วย tests/calendar-items.mjs) ผู้ใช้เลือก: งานเป็นจุดเดียววันเริ่มใช้ ไม่ลากแถบ; ประชุมไม่มีเวลา ไม่มี schema change

@@ -175,6 +175,11 @@ button { white-space: nowrap; }button:active { opacity: .8; }
 .link-list li > button, .confirm-close { margin-left: auto; }
 .confirm-close { display: inline-flex; gap: 4px; }
 .member .generated-link { margin-top: 10px; }
+.member-projects { display: grid; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.member-projects .project-options { margin: 8px 0 0; }
+.member-projects-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.member-projects-actions select, .member-projects-actions .primary { height: 32px; padding-block: 4px; font-size: 12px; }
+.member-projects > small { color: var(--muted); font-size: 11px; }
 
 /* Calendar (WorkAlljob/Lark concept in Workboard colors): side panel + month/week grid.
  * Meetings = filled dot, pending tasks = ring, released = check + strike, overdue = danger. Project colour via --chip. */

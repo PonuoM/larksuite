@@ -320,6 +320,18 @@ function AccessManager({ projects, tabs, onProjectsChanged, onBack }: { projects
   const [projectNotice, setProjectNotice] = useState('');
   useAutoClear(projectNotice, setProjectNotice, 4000);
   const [shown, setShown] = useState<{ linkId: number; link: string } | null>(null);
+  // Projects belong to the member, not the link (owner, 2026-09-19): editing them here updates every existing link.
+  const [editing, setEditing] = useState<{ memberId: number; role: 'viewer' | 'editor'; projectIds: number[] } | null>(null);
+  function editProjects(member: AccessMember) {
+    setEditing(editing?.memberId === member.id ? null : { memberId: member.id, role: member.projects[0]?.role === 'editor' ? 'editor' : 'viewer', projectIds: member.projects.map((p) => p.project_id) });
+  }
+  function saveProjects() {
+    if (!editing) return;
+    run(async () => {
+      await api(`/access/${editing.memberId}/projects`, { method: 'POST', body: JSON.stringify({ role: editing.role, project_ids: editing.projectIds }) });
+      await load(); setEditing(null);
+    });
+  }
   function showLink(linkId: number) {
     if (shown?.linkId === linkId) { setShown(null); return; }
     run(async () => { const data = await api<{ link: string }>(`/access/links/${linkId}/url`); setShown({ linkId, link: data.link }); setCopied(false); });
@@ -357,7 +369,7 @@ function AccessManager({ projects, tabs, onProjectsChanged, onBack }: { projects
     run(async () => {
       await api('/projects', { method: 'POST', body: JSON.stringify({ name: projectName, description }) });
       await onProjectsChanged();
-      setProjectNotice(`สร้างโปรเจกต์ “${projectName}” แล้ว`); setProjectName(''); setDescription(''); setShowProjectForm(false);
+      setProjectNotice(`สร้างโปรเจกต์ “${projectName}” แล้ว · ให้สมาชิกเดิมเห็นได้จากปุ่ม “แก้ไขโปรเจกต์”`); setProjectName(''); setDescription(''); setShowProjectForm(false);
     });
   }
   const issuedLink = (memberId: number) => issued?.memberId === memberId && <div className="generated-link">
@@ -367,7 +379,7 @@ function AccessManager({ projects, tabs, onProjectsChanged, onBack }: { projects
   </div>;
   return <><header className="topbar"><div><h1>ตั้งค่า</h1><span>ลิงก์เชิญและสมาชิก</span></div><div className="topbar-actions"><button className="secondary" onClick={() => setShowProjectForm(!showProjectForm)}>{showProjectForm ? 'ปิดฟอร์ม' : '+ โปรเจกต์'}</button><button className="mobile-action" onClick={onBack}>กลับบอร์ด</button></div></header>{tabs}
     <div className="access-content">
-      {error && <div className="alert error" role="alert">{error}</div>}
+      {error && !editing && <div className="alert error" role="alert">{error}</div>}
       {projectNotice && <div className="alert success" role="status">{projectNotice}</div>}
       <section className="panel"><h2>สร้างลิงก์เชิญ</h2>
         <form onSubmit={createLink} className="access-form">
@@ -378,7 +390,7 @@ function AccessManager({ projects, tabs, onProjectsChanged, onBack }: { projects
           {role !== 'admin' ? <fieldset className="project-picker"><legend>โปรเจกต์ที่เข้าถึงได้ · {selectedIds.length} โปรเจกต์</legend>
             <label className="project-choice"><input type="checkbox" checked={allProjects} onChange={(e) => { setAllProjects(e.target.checked); setProjectIds([]); }} /> ทุกโปรเจกต์ที่มีตอนนี้</label>
             <div className="project-options">{projects.map((p) => <label className="project-choice" key={p.id}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={(e) => { setAllProjects(false); setProjectIds(e.target.checked ? [...selectedIds, p.id] : selectedIds.filter((id) => id !== p.id)); }} />{p.name}</label>)}</div>
-            <small>เลือกได้หลายโปรเจกต์ · โปรเจกต์ที่สร้างภายหลังต้องให้สิทธิ์เพิ่ม</small>
+            <small>เลือกได้หลายโปรเจกต์ · เพิ่ม/ลดภายหลังได้จากปุ่ม “แก้ไขโปรเจกต์” ในรายการสมาชิก</small>
           </fieldset> : <p className="access-hint">ผู้ดูแลจัดการทุกโปรเจกต์และสิทธิ์สมาชิกได้</p>}
         </form>
         {issuedLink(0)}
@@ -389,8 +401,21 @@ function AccessManager({ projects, tabs, onProjectsChanged, onBack }: { projects
           const links = member.links.filter((l) => showRevoked || !l.revoked_at);
           return <article key={member.id} className={member.revoked_at ? 'member revoked' : 'member'}>
             <header><div><strong>{member.label}</strong><span>{member.is_admin ? 'ผู้ดูแล · ทุกโปรเจกต์' : member.projects.map((p) => p.project_name).join(', ') + ' · ' + (member.projects[0]?.role === 'editor' ? 'แก้ไข' : 'ดู')}</span>{!member.revoked_at && <label className="approver-toggle"><input type="checkbox" checked={member.can_approve} disabled={busy} onChange={(e) => setApprover(member, e.target.checked)} /> ผู้อนุมัติ (กดอนุมัติงานในคอลัมน์ “รออนุมัติ”)</label>}</div>
-              {member.revoked_at ? <small>ยกเลิกสมาชิกแล้ว</small> : <div className="member-actions"><button className="secondary" disabled={busy} onClick={() => newLink(member.id)}>+ ลิงก์ถาวรใหม่</button>{revoking === member.id ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => run(async () => { await api('/access/' + member.id + '/revoke', { method: 'POST', body: '{}' }); setRevoking(0); await load(); })}>ยืนยันยกเลิกสมาชิก</button><button className="text-action" onClick={() => setRevoking(0)}>ไม่ยกเลิก</button></span> : <button className="danger-text" onClick={() => setRevoking(member.id)}>ยกเลิกสมาชิก</button>}</div>}
+              {member.revoked_at ? <small>ยกเลิกสมาชิกแล้ว</small> : <div className="member-actions">{!member.is_admin && <button className="secondary" aria-expanded={editing?.memberId === member.id} disabled={busy} onClick={() => editProjects(member)}>แก้ไขโปรเจกต์</button>}<button className="secondary" disabled={busy} onClick={() => newLink(member.id)}>+ ลิงก์ถาวรใหม่</button>{revoking === member.id ? <span className="confirm-close"><button className="danger-text" disabled={busy} onClick={() => run(async () => { await api('/access/' + member.id + '/revoke', { method: 'POST', body: '{}' }); setRevoking(0); await load(); })}>ยืนยันยกเลิกสมาชิก</button><button className="text-action" onClick={() => setRevoking(0)}>ไม่ยกเลิก</button></span> : <button className="danger-text" onClick={() => setRevoking(member.id)}>ยกเลิกสมาชิก</button>}</div>}
             </header>
+            {editing?.memberId === member.id && <div className="member-projects">
+              <fieldset className="project-picker"><legend>โปรเจกต์ที่ {member.label} เข้าถึงได้ · {editing.projectIds.length} โปรเจกต์</legend>
+                <label className="project-choice"><input type="checkbox" checked={projects.length > 0 && projects.every((p) => editing.projectIds.includes(p.id))} onChange={(e) => setEditing({ ...editing, projectIds: e.target.checked ? projects.map((p) => p.id) : [] })} /> ทุกโปรเจกต์ที่มีตอนนี้</label>
+                <div className="project-options">{projects.map((p) => <label className="project-choice" key={p.id}><input type="checkbox" checked={editing.projectIds.includes(p.id)} onChange={(e) => setEditing({ ...editing, projectIds: e.target.checked ? [...editing.projectIds, p.id] : editing.projectIds.filter((id) => id !== p.id) })} />{p.name}</label>)}</div>
+              </fieldset>
+              <div className="member-projects-actions">
+                <select aria-label="สิทธิ์" value={editing.role} onChange={(e) => setEditing({ ...editing, role: e.target.value as 'viewer' | 'editor' })}><option value="viewer">ดูอย่างเดียว</option><option value="editor">แก้ไขงาน</option></select>
+                <button className="primary" disabled={busy || !editing.projectIds.length} onClick={saveProjects}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+                <button className="text-action" onClick={() => setEditing(null)}>ยกเลิก</button>
+              </div>
+              {error && <div className="alert error" role="alert">{error}</div>}
+              <small>มีผลกับทุกลิงก์ของสมาชิกนี้ทันที ไม่ต้องส่งลิงก์ใหม่ · คนที่เปิดหน้าอยู่ให้โหลดหน้าใหม่เพื่อเห็นโปรเจกต์ที่เพิ่ม</small>
+            </div>}
             {links.length > 0 && <ul className="link-list">{links.map((link) => <li key={link.id} className={link.revoked_at ? 'closed' : ''}>
               <span className="link-kind-badge">{link.reusable ? 'ลิงก์ถาวร' : 'ใช้ครั้งเดียว'}</span>
               <small>{linkState(link)}{link.current && ' · ลิงก์ที่คุณใช้อยู่'}</small>

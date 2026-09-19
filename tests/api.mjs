@@ -331,6 +331,24 @@ try {
   if (replacementDevice.status !== 200) throw new Error('replacement link not redeemable');
   const replacementProjects = (await call(replacementDevice, '/projects')).payload.data.map((p) => Number(p.id));
   if (JSON.stringify(replacementProjects) !== JSON.stringify([projectId])) throw new Error('replacement link changed project scope');
+  // Editing a member's projects applies to the link and session already in use — no new link needed.
+  const memberId = permanent.payload.data.id;
+  const grown = await call(admin, `/access/${memberId}/projects`, { method: 'POST', body: JSON.stringify({ role: 'viewer', project_ids: allIds.slice(0, 2) }) });
+  if (grown.status !== 200) throw new Error('edit member projects failed: ' + JSON.stringify(grown));
+  const grownProjects = (await call(replacementDevice, '/projects')).payload.data;
+  if (JSON.stringify(grownProjects.map((p) => Number(p.id))) !== JSON.stringify(allIds.slice(0, 2)) || grownProjects.some((p) => p.role !== 'viewer')) throw new Error('added project not visible through the existing session');
+  if ((await call(replacementDevice, '/projects/' + allIds[1] + '/tasks')).status !== 200) throw new Error('added project denied');
+  const shrunk = await call(admin, `/access/${memberId}/projects`, { method: 'POST', body: JSON.stringify({ role: 'editor', project_ids: [allIds[1]] }) });
+  if (shrunk.status !== 200) throw new Error('shrink member projects failed');
+  if ((await call(replacementDevice, '/projects/' + allIds[0] + '/tasks')).status !== 404) throw new Error('removed project still accessible');
+  const editorScope = (await call(replacementDevice, '/projects')).payload.data;
+  if (editorScope.length !== 1 || Number(editorScope[0].id) !== allIds[1] || editorScope[0].role !== 'editor') throw new Error('role change not applied');
+  for (const bad of [{ role: 'viewer', project_ids: [] }, { role: 'admin', project_ids: [allIds[0]] }, { role: 'viewer', project_ids: ['x'] }, { role: 'viewer', project_ids: [2147483647] }]) {
+    if (![404, 422].includes((await call(admin, `/access/${memberId}/projects`, { method: 'POST', body: JSON.stringify(bad) })).status)) throw new Error('invalid member projects accepted: ' + JSON.stringify(bad));
+  }
+  if ((await call(admin, `/access/${admin.id}/projects`, { method: 'POST', body: JSON.stringify({ role: 'viewer', project_ids: [allIds[0]] }) })).status !== 422) throw new Error('admin memberships edited');
+  if ((await call(viewer, `/access/${memberId}/projects`, { method: 'POST', body: JSON.stringify({ role: 'viewer', project_ids: [allIds[0]] }) })).status !== 403) throw new Error('viewer edited member projects');
+  if (JSON.stringify((await call(replacementDevice, '/projects')).payload.data.map((p) => Number(p.id))) !== JSON.stringify([allIds[1]])) throw new Error('rejected edit changed scope');
   if ((await call(viewer, `/access/links/${permanentLink.id}/close`, { method: 'POST', body: '{}' })).status !== 403) throw new Error('viewer closed a link');
   const adminLink = Number(await sql(`SELECT id FROM invitations WHERE principal_id=${admin.id} ORDER BY id DESC LIMIT 1;`));
   if ((await call(admin, `/access/links/${adminLink}/close`, { method: 'POST', body: '{}' })).status !== 422) throw new Error('admin closed the link of the current session');
@@ -365,7 +383,7 @@ try {
   if(eventCount!==3)throw new Error('meeting audit event count incorrect');
   if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
   if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'five columns + approval 6→0 + CEO comments', 'move task between projects', 'developers: admin list, multi-assign, keep on PATCH, deactivate, viewer projection'] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'edit member projects on existing links', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'five columns + approval 6→0 + CEO comments', 'move task between projects', 'developers: admin list, multi-assign, keep on PATCH, deactivate, viewer projection'] }, null, 2));
 } finally {
   if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
   const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');
