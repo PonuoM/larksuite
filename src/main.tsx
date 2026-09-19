@@ -8,7 +8,8 @@ import './project-brief.css';
 import ProjectViews from './ProjectViews';
 import MeetingCalendar from './MeetingCalendar';
 import MobileBoard from './MobileBoard';
-import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, approvable, decide, Field, ProgressBar, dateTime, formatDate, message, type Notify } from './TaskDrawer';
+import TaskTable from './TaskTable';
+import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, approvable, decide, Field, ProgressBar, TaskTags, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
 type View = 'board' | 'overview' | 'calendar' | 'access';
 // Everyone lands on the board. Old ?view=report links open the merged overview/report page.
@@ -50,6 +51,8 @@ function App() {
   const [query, setQuery] = useState('');
   const [feature, setFeature] = useState('');
   const [showDone, setShowDone] = useState(false);
+  // Board layout: Kanban by default (owner, 2026-09-19); the table is opt-in for this visit.
+  const [layout, setLayout] = useState<'kanban' | 'table'>('kanban');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -220,9 +223,10 @@ function App() {
           <input aria-label="ค้นหางาน" placeholder="ค้นหางาน…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <label><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> งานเสร็จเก่า</label>
           <span className="toolbar-count">{visible.length} งาน</span>
+          <div className="layout-toggle" role="group" aria-label="รูปแบบการแสดง"><button type="button" aria-pressed={layout === 'kanban'} onClick={() => setLayout('kanban')}>Kanban</button><button type="button" aria-pressed={layout === 'table'} onClick={() => setLayout('table')}>ตาราง</button></div>
         </div>
 
-        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : <Board tasks={visible} projects={projects} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} canApprove={!!session.user.can_approve} onApprove={approveTask} onOpen={setSelected} onMove={moveTask} />}
+        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : layout === 'table' ? <TaskTable tasks={visible} projects={projects} canApprove={!!session.user.can_approve} moving={moving} onOpen={setSelected} onApprove={approveTask} /> : <Board tasks={visible} projects={projects} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} canApprove={!!session.user.can_approve} onApprove={approveTask} onOpen={setSelected} onMove={moveTask} />}
         </>}
       </>}
       {notice && !error && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
@@ -246,8 +250,9 @@ function Board({ tasks, projects, canEdit, canApprove, onApprove, onOpen, onMove
         <header><span className={`status-dot status-${index}`} /> <strong>{status}</strong><small>{items.length}</small></header>
         <div className="cards">
           {items.map((task) => <article key={task.id} className={`task-card ${dragId === task.id ? 'dragging' : ''}`} draggable={canEdit(task)} onDragStart={() => setDragId(task.id)} onDragEnd={() => setDragId(null)} onClick={() => onOpen(task)} tabIndex={0} role="button" onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onOpen(task);}}}>
-            <div className="card-top"><small>{projects.find(p=>p.id===task.project_id)?.name} · {task.feature || 'ทั่วไป'}</small>{canEdit(task) && <span className="drag-grip">⠿</span>}</div>
+            <div className="card-top"><small>{projects.find(p=>p.id===task.project_id)?.name}{task.feature !== undefined && ` · ${task.feature || 'ทั่วไป'}`}</small>{canEdit(task) && <span className="drag-grip">⠿</span>}</div>
             <h2>{task.title}</h2>
+            <TaskTags task={task} />
             {task.public_summary&&<p className="card-summary">{task.public_summary}</p>}
             <ProgressBar list={task.checklist} />
             {task.blocked_reason && <p className="blocked">! {task.blocked_reason}</p>}

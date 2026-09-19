@@ -14,7 +14,10 @@ import { join } from 'node:path';
 
 const STATUSES = ['รอดำเนินการ', 'กำลังทำ', 'รอทดสอบ', 'รอทดสอบ/เปิดใช้', 'เปิดใช้งานแล้ว', 'รอตัดสินใจ', 'รออนุมัติ'];
 const ACTIVE = [6, 0, 1, 3, 4]; // 2 and 5 retired (migration 007)
-const FIELDS = ['title', 'feature', 'public_summary', 'scope', 'criteria', 'evidence', 'assignee', 'blocked_reason', 'planned_go_live_on'];
+// Work type / rough size (migration 008): kind=bug|feature|improve|data · size=S|M|L ('' = not specified).
+const KINDS = { bug: 'แก้บั๊ก', feature: 'ฟีเจอร์ใหม่', improve: 'ปรับปรุง', data: 'แก้ข้อมูล' };
+const SIZES = { S: 'เล็ก ~1 วัน', M: 'กลาง 2–5 วัน', L: 'ใหญ่ 1 สัปดาห์+' };
+const FIELDS = ['title', 'feature', 'kind', 'size', 'public_summary', 'scope', 'criteria', 'evidence', 'assignee', 'blocked_reason', 'planned_go_live_on'];
 const HELP = `Workboard CLI — node scripts/wb.mjs <command> [...]
 
 อ่าน
@@ -34,6 +37,7 @@ const HELP = `Workboard CLI — node scripts/wb.mjs <command> [...]
                                            งานใหญ่กระทบทั้งระบบเริ่มที่ 6 · แก้บั๊ก/ข้อมูลเริ่มที่ 0 · งานใน 6 เริ่มได้เมื่อผู้อนุมัติกดอนุมัติเท่านั้น
   set TASK field=value [field=@file.md ...]
                                            แก้ฟิลด์: ${FIELDS.join(', ')}
+                                           kind=bug|feature|improve|data · size=S|M|L (เล็ก ~1 วัน · กลาง 2–5 วัน · ใหญ่ 1 สัปดาห์+)
   create PROJECT "ชื่องาน" [field=value ...] [--sub "งานย่อย"]...
   notify TASK test|main ["ข้อความ"]         ส่งสถานะงานเข้ากลุ่ม Lark โดยไม่บันทึกอะไร
 
@@ -111,7 +115,7 @@ async function patch(t, changes) {
   return warn((await call('/tasks/' + t.id, { method: 'PATCH', body })).data);
 }
 function printTask(t, events = []) {
-  const lines = [`${pad(t.id)} ${t.title}`, `สถานะ: ${STATUSES[t.status]} (${t.status}) · ฟังก์ชัน: ${t.feature || '-'} · ผู้รับผิดชอบ: ${t.assignee || '-'} · เริ่มใช้: ${t.planned_go_live_on || 'ยังไม่กำหนด'} · version ${t.version}`];
+  const lines = [`${pad(t.id)} ${t.title}`, `สถานะ: ${STATUSES[t.status]} (${t.status}) · ฟังก์ชัน: ${t.feature || '-'} · ประเภท: ${KINDS[t.kind] || '-'} · ขนาด: ${SIZES[t.size] || '-'} · ผู้รับผิดชอบ: ${t.assignee || '-'} · เริ่มใช้: ${t.planned_go_live_on || 'ยังไม่กำหนด'} · version ${t.version}`];
   for (const [label, key] of [['สรุปสำหรับผู้ชม', 'public_summary'], ['รายละเอียดและขอบเขต', 'scope'], ['เกณฑ์ตรวจรับ', 'criteria'], ['หลักฐาน', 'evidence'], ['ติดขัด', 'blocked_reason']]) if (t[key]) lines.push('', `## ${label}`, t[key]);
   if (t.checklist?.length) { lines.push('', `## งานย่อย${prog(t)}`); for (const c of t.checklist) lines.push(`- [${c.done ? 'x' : ' '}] ${c.label}  (id: ${c.id})${c.note ? '\n    โน้ต: ' + c.note : ''}`); }
   if (events.length) { lines.push('', '## ประวัติล่าสุด'); for (const e of events.slice(0, 10)) { let p = {}; try { p = JSON.parse(e.payload); } catch { /* raw */ } lines.push(`- ${e.created_at} ${e.actor}: ${e.action}${p.text ? ' — ' + p.text : p.label ? ' — ' + p.label : ''}`); } }

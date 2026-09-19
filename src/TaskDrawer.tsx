@@ -11,10 +11,17 @@ export const STATUS_ORDER = [6, 0, 1, 3, 4];
 export const AWAITING_APPROVAL = 6;
 export const approvable = (status: number) => status === AWAITING_APPROVAL;
 export const EMPTY_TASK: Omit<Task, 'id' | 'project_id' | 'updated_at' | 'version' | 'actual_released_at'> = {
-  title: '', feature: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '',
+  title: '', feature: '', kind: '', size: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '',
   blocked_reason: '', checklist: [], status: 0, planned_go_live_on: '', archived: 0,
 };
 export type Notify = '' | LarkTarget['key'];
+// Work type and rough size (migration 008). Keys are what the API stores; keep in sync with TASK_KINDS / TASK_SIZES.
+export const KINDS: Record<string, string> = { bug: 'แก้บั๊ก', feature: 'ฟีเจอร์ใหม่', improve: 'ปรับปรุง', data: 'แก้ข้อมูล' };
+export const SIZES: Record<string, { label: string; hint: string }> = { S: { label: 'เล็ก', hint: '~1 วัน' }, M: { label: 'กลาง', hint: '2–5 วัน' }, L: { label: 'ใหญ่', hint: '1 สัปดาห์ขึ้นไป' } };
+export function TaskTags({ task }: { task: Task }) {
+  if (!KINDS[task.kind] && !SIZES[task.size]) return null;
+  return <span className="task-tags">{KINDS[task.kind] && <span className={'tag kind-' + task.kind}>{KINDS[task.kind]}</span>}{SIZES[task.size] && <span className="tag size" title={SIZES[task.size].hint}>{SIZES[task.size].label} · {SIZES[task.size].hint}</span>}</span>;
+}
 
 // Shared with docs/TASK-GUIDE.md: keep the headings in sync so people and agents write tasks the same way.
 const SCOPE_TEMPLATE = '## เป้าหมาย\nทำเพื่ออะไร แก้ปัญหาอะไร ใครได้ประโยชน์\n\n## ขอบเขต\n- ทำ: \n- ไม่ทำในรอบนี้: \n\n## จุดที่เกี่ยวข้องในระบบ\nหน้าจอ / เมนู / ไฟล์ / ตาราง / API\n\n## หมายเหตุ\n';
@@ -78,6 +85,7 @@ export default function TaskDrawer({ task, projects, editable, canApprove, busy,
           <Field label="โปรเจกต์"><select value={draft.project_id} onChange={(e) => field('project_id', Number(e.target.value))}>{projects.filter((p) => p.id === draft.project_id || p.role !== 'viewer').map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="ชื่องาน"><input required value={draft.title} onChange={(e) => field('title', e.target.value)} placeholder="สิ่งที่จะได้เมื่อเสร็จ เช่น หน้าโทรออกแบบใหม่สำหรับทีมเทเล" /></Field>
           <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUS_ORDER.map((i) => <option key={i} value={i} disabled={i !== draft.status && task.status === AWAITING_APPROVAL && !canApprove}>{STATUSES[i]}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
+          <div className="field-grid"><Field label="ประเภทงาน"><select value={draft.kind} onChange={(e) => field('kind', e.target.value)}><option value="">ไม่ระบุ</option>{Object.entries(KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field><Field label="ขนาดงาน (ประมาณเวลา)"><select value={draft.size} onChange={(e) => field('size', e.target.value)}><option value="">ไม่ระบุ</option>{Object.entries(SIZES).map(([k, v]) => <option key={k} value={k}>{v.label} · {v.hint}</option>)}</select></Field></div>
           <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} /></Field></div>
           <Field label="สรุปสำหรับผู้ชมภายนอก"><textarea rows={3} value={draft.public_summary} onChange={(e) => field('public_summary', e.target.value)} placeholder="1–2 ประโยคที่คนนอกทีมอ่านแล้วเข้าใจ: ทำอะไร เพื่อใคร ตอนนี้ถึงไหน" /></Field>
         </> : <><ViewerSummary task={draft} projects={projects} />{canApprove && <ReadOnlyDetails task={draft} />}</>}
@@ -137,7 +145,7 @@ function ReadOnlyDetails({ task }: { task: Task }) {
 
 function ViewerSummary({ task, projects }: { task: Task; projects: Project[] }) {
   return <div className="viewer-summary">
-    <dl><dt>โปรเจกต์</dt><dd>{projects.find((p) => p.id === task.project_id)?.name}</dd><dt>สถานะ</dt><dd>{STATUSES[task.status]}</dd><dt>กำหนดเริ่มใช้</dt><dd>{task.planned_go_live_on ? formatDate(task.planned_go_live_on) : 'ยังไม่กำหนด'}</dd></dl>
+    <dl><dt>โปรเจกต์</dt><dd>{projects.find((p) => p.id === task.project_id)?.name}</dd><dt>สถานะ</dt><dd>{STATUSES[task.status]}</dd><dt>กำหนดเริ่มใช้</dt><dd>{task.planned_go_live_on ? formatDate(task.planned_go_live_on) : 'ยังไม่กำหนด'}</dd><dt>ประเภทงาน</dt><dd>{KINDS[task.kind] ?? 'ไม่ระบุ'}</dd><dt>ขนาดงาน</dt><dd>{SIZES[task.size] ? `${SIZES[task.size].label} · ${SIZES[task.size].hint}` : 'ไม่ระบุ'}</dd></dl>
     {task.public_summary ? <p>{task.public_summary}</p> : <p className="muted">ยังไม่มีสรุปสำหรับผู้ชม</p>}
   </div>;
 }

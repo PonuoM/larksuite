@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Project, Task } from './types';
-import { STATUSES, STATUS_ORDER, approvable, progress, formatDate } from './TaskDrawer';
+import { STATUSES, STATUS_ORDER, TaskTags, approvable, progress, formatDate } from './TaskDrawer';
 import { today } from './ProjectViews';
 
 // Phone layout of the board (owner mock-up, 2026-09-18): a status-grouped list with filter chips instead of
@@ -55,8 +55,9 @@ export default function MobileBoard({ tasks, projects, projectId, query, canAppr
             const w = when(t);
             return <article key={t.id} className="mrow">
               <button className="mrow-open" onClick={() => onOpen(t)}>
-              <span className="mrow-eyebrow"><span>{!projectId ? projects.find((p) => p.id === t.project_id)?.name : t.feature || 'ทั่วไป'}</span><span>#{String(t.id).padStart(3, '0')}</span></span>
+              <span className="mrow-eyebrow"><span>{!projectId || t.feature === undefined ? projects.find((p) => p.id === t.project_id)?.name : t.feature || 'ทั่วไป'}</span><span>#{String(t.id).padStart(3, '0')}</span></span>
               <strong>{t.title}</strong>
+              <TaskTags task={t} />
               {t.public_summary && <span className="mrow-summary">{t.public_summary}</span>}
               {t.blocked_reason && <p className="mrow-blocked">! {t.blocked_reason}</p>}
               <div className="mrow-meta">

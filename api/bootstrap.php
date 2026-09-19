@@ -10,6 +10,9 @@ const TASK_STATUSES = ['รอดำเนินการ','กำลังท�
 const ACTIVE_STATUSES = [6,0,1,3,4];
 const STATUS_AWAITING_APPROVAL = 6;
 const REJECTED_PREFIX = 'ไม่อนุมัติ: ';
+// Optional work type and rough size (migration 008); '' = not specified. Viewers see both.
+const TASK_KINDS = ['bug','feature','improve','data'];
+const TASK_SIZES = ['S','M','L'];
 function config(): array {
     static $config;
     if ($config === null) {
@@ -112,7 +115,7 @@ function checklistItems(string $json): array {
     return $out;
 }
 function taskDto(array $t,string $role): array {
-    $out=['id'=>(int)$t['id'],'project_id'=>(int)$t['project_id'],'title'=>$t['title'],'public_summary'=>$t['public_summary'],'status'=>(int)$t['status'],'planned_go_live_on'=>$t['planned_go_live_on'],'actual_released_at'=>$t['actual_released_at'],'updated_at'=>$t['updated_at'],'version'=>(int)$t['version'],'approved_at'=>$t['approved_at']??null];
+    $out=['id'=>(int)$t['id'],'project_id'=>(int)$t['project_id'],'title'=>$t['title'],'public_summary'=>$t['public_summary'],'status'=>(int)$t['status'],'planned_go_live_on'=>$t['planned_go_live_on'],'actual_released_at'=>$t['actual_released_at'],'updated_at'=>$t['updated_at'],'version'=>(int)$t['version'],'approved_at'=>$t['approved_at']??null,'kind'=>$t['kind'],'size'=>$t['size']];
     $list=checklistItems($t['checklist']);
     // Viewers see sub-task names and progress, never the internal notes.
     $out['checklist']=$role==='viewer'?array_map(function($c){return ['id'=>$c['id'],'label'=>$c['label'],'done'=>$c['done']];},$list):$list;
@@ -138,6 +141,11 @@ function taskData(array $data): array {
         $date=is_string($due)?DateTime::createFromFormat('!Y-m-d',$due):false;
         if (!$date||$date->format('Y-m-d')!==$due) reply(422,'วันที่เริ่มใช้งานไม่ถูกต้อง');
         $out['planned_go_live_on']=$due;
+    }
+    foreach (['kind'=>TASK_KINDS,'size'=>TASK_SIZES] as $key=>$allowed) {
+        $value=$data[$key]??'';
+        if (!is_string($value)||($value!==''&&!in_array($value,$allowed,true))) reply(422,'ข้อมูลไม่ถูกต้อง: '.$key);
+        $out[$key]=$value;
     }
     $status=$data['status']??0;
     if (!is_int($status)||!in_array($status,ACTIVE_STATUSES,true)) reply(422,'สถานะไม่ถูกต้อง');

@@ -28,6 +28,9 @@ export type Task = {
   updated_at: string;
   version: number;
   feature?: string;
+  // Work type and rough size (migration 008), '' = not specified. Sent to viewers too.
+  kind: string;
+  size: string;
   scope?: string;
   criteria?: string;
   evidence?: string;

@@ -418,3 +418,34 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
 .mrow-meta .late { color: var(--danger); }
 .mrow .approve-tick { margin: 6px 0 0; }
 .mboard-empty { padding: 24px 12px; text-align: center; }
+
+/* Work type / size tags (migration 008) and the board's table layout (owner, 2026-09-19). */
+.task-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 8px; }
+.tag { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; font-size: 10px; line-height: 1.6; color: var(--muted); background: var(--surface); white-space: nowrap; }
+.tag.kind-bug { color: var(--danger); border-color: #f0c9c6; background: #fdf1f0; }
+.tag.kind-feature { color: var(--good); border-color: #bcdccf; background: #eef7f3; }
+.tag.kind-improve { color: #3b5b92; border-color: #c8d3e8; background: #f1f4fa; }
+.tag.kind-data { color: #8a5a12; border-color: #ead5b3; background: #fbf5ea; }
+.tag.size { color: var(--ink); background: var(--soft); }
+.layout-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 34px; }
+.layout-toggle button { border: 0; background: var(--surface); color: var(--muted); padding: 0 12px; font-size: 12px; }
+.layout-toggle button + button { border-left: 1px solid var(--line); }
+.layout-toggle button[aria-pressed=true] { background: var(--tint); color: var(--accent); font-weight: 500; }
+.table-wrap { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; }
+.task-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+.task-table th { position: sticky; top: 0; z-index: 1; background: var(--soft); border-bottom: 1px solid var(--line); text-align: left; padding: 0; white-space: nowrap; }
+.task-table th:first-child { border-top-left-radius: 8px; }.task-table th:last-child { border-top-right-radius: 8px; }
+.task-table th button { width: 100%; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 500; text-align: left; padding: 8px 10px; }
+.task-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.task-table tbody tr:last-child td { border-bottom: 0; }
+.task-table tbody tr { cursor: pointer; }
+.task-table tbody tr:hover, .task-table tbody tr:focus-visible { background: var(--paper); outline: none; }
+.task-table .num { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.task-table .title-cell { min-width: 240px; max-width: 420px; }
+.task-table .title-cell strong { display: block; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.task-table .title-cell .blocked { display: block; margin-top: 3px; font-size: 10px; }
+.task-table .muted-cell { color: var(--muted); }
+.task-table td.muted-cell, .task-table td.late { white-space: nowrap; }
+.task-table .late { color: var(--danger); }
+.task-table .status-cell { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.task-table .approve-tick { margin-top: 6px; }

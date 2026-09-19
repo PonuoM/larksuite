@@ -78,6 +78,8 @@ try {
   const taskInput = {
     title: `API integration ${marker}`,
     feature: 'ตรวจสอบระบบ',
+    kind: 'bug',
+    size: 'M',
     public_summary: 'ข้อความที่ผู้ชมเห็นได้',
     scope: 'ข้อมูลภายในทีม',
     criteria: 'ตรวจ API ผ่าน',
@@ -108,6 +110,13 @@ try {
     if (undated.status !== 201 || undated.payload.data.planned_go_live_on !== null) throw new Error(`task without go-live date (${JSON.stringify(due)}) rejected: ${undated.status}`);
   }
   if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, planned_go_live_on: '2026-02-30' }) })).status !== 422) throw new Error('invalid go-live date accepted');
+  // Work type / size (migration 008): optional, '' allowed, anything outside the fixed lists rejected.
+  for (const bad of [{ kind: 'epic' }, { size: 'XL' }, { kind: 1 }]) {
+    if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, ...bad }) })).status !== 422) throw new Error('invalid kind/size accepted: ' + JSON.stringify(bad));
+  }
+  const unsized = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, kind: '', size: undefined }) });
+  if (unsized.status === 201) await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(unsized.payload.data.id)};`);
+  if (unsized.status !== 201 || unsized.payload.data.kind !== '' || unsized.payload.data.size !== '') throw new Error(`task without kind/size rejected: ${unsized.status}`);
 
   const moved = await call(editor, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 1, version }) });
   if (moved.status !== 200 || moved.payload.data.status !== 1 || moved.payload.data.version !== version + 1) throw new Error('move/version failed');
@@ -118,6 +127,7 @@ try {
   const viewerList = await call(viewer, `/projects/${projectId}/tasks`);
   const projected = viewerList.payload.data.items.find((item) => item.id === taskId);
   if (!projected || projected.public_summary !== taskInput.public_summary || 'scope' in projected) throw new Error('viewer projection failed');
+  if (projected.kind !== 'bug' || projected.size !== 'M') throw new Error('viewer should see work type and size');
   // Viewers see sub-task names and progress, never notes.
   if (projected.checklist?.length !== 1 || projected.checklist[0].label !== 'สร้างงาน' || projected.checklist[0].done !== true || 'note' in projected.checklist[0]) throw new Error('viewer sub-task projection failed: ' + JSON.stringify(projected.checklist));
 
