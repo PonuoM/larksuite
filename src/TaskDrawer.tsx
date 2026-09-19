@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import type { ChecklistItem, Developer, LarkTarget, Project, Task, TaskEvent } from './types';
 import { DeveloperPicker, developerNames } from './Developers';
+import FormattedReport from './FormattedReport';
 
 // Index = status code stored in the database (5 and 6 appended by migration 006).
 // Codes 2 and 5 were merged away (migration 007); their names stay so old history still reads correctly.
@@ -142,7 +143,8 @@ function ApprovalPanel({ task, onDone, onComment, onError }: { task: Task; onDon
 function ReadOnlyDetails({ task, developers }: { task: Task; developers: Developer[] }) {
   const blocks = [['ผู้พัฒนา', developerNames(task, developers)], ['รายละเอียดและขอบเขต', task.scope], ['เกณฑ์ตรวจรับ', task.criteria], ['สาเหตุที่ติดขัด / เรื่องที่รอตัดสินใจ', task.blocked_reason], ['หลักฐาน', task.evidence]].filter(([, v]) => v && v.trim());
   if (!blocks.length) return null;
-  return <div className="readonly-details">{blocks.map(([label, value]) => <section key={label}><h3>{label}</h3><p>{value}</p></section>)}</div>;
+  // Scope, criteria and evidence are written in Markdown (## headings, - lists); show them formatted, not as raw marks.
+  return <div className="readonly-details">{blocks.map(([label, value]) => <section key={label}><h3>{label}</h3>{label === 'ผู้พัฒนา' ? <p>{value}</p> : <FormattedReport content={value ?? ''} />}</section>)}</div>;
 }
 
 function ViewerSummary({ task, projects }: { task: Task; projects: Project[] }) {

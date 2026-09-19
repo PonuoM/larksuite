@@ -383,6 +383,13 @@ button.danger { border: 1px solid var(--danger); background: var(--danger); colo
 .readonly-details { display: grid; gap: 12px; margin: 4px 0 16px; }
 .readonly-details h3 { font-size: 12px; font-weight: 500; color: var(--muted); margin: 0 0 4px; }
 .readonly-details p { font-size: 13px; line-height: 1.8; white-space: pre-wrap; margin: 0; overflow-wrap: anywhere; }
+.readonly-details > section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.readonly-details .formatted-report { font-size: 13px; line-height: 1.8; }
+.readonly-details .formatted-report p { white-space: normal; margin: 6px 0; }
+.readonly-details .formatted-report h3 { font-size: 14px; font-weight: 600; color: var(--ink); border-top: 1px solid var(--line); padding-top: 12px; margin: 14px 0 4px; }
+.readonly-details .formatted-report h3:first-child { border: 0; padding-top: 0; margin-top: 2px; }
+.readonly-details .formatted-report ul { margin: 4px 0; }
+.readonly-details .formatted-report li { margin: 3px 0; }
 /* Mobile: bottom tab bar replaces the hidden sidebar and the view dropdown */
 .mobile-tabs { display: none; }
 @media (max-width: 900px) {
