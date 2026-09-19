@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, ApiError, setCsrf } from './api';
-import type { AccessLink, AccessMember, LarkTarget, Project, SessionUser, Task } from './types';
+import type { AccessLink, AccessMember, Developer, LarkTarget, Project, SessionUser, Task } from './types';
+import DevelopersManager, { developerNames } from './Developers';
 import './index.css';
 import './mobile-workspace.css';
 import './project-brief.css';
@@ -11,15 +12,16 @@ import MobileBoard from './MobileBoard';
 import TaskTable from './TaskTable';
 import TaskDrawer, { EMPTY_TASK, STATUSES, STATUS_ORDER, approvable, decide, Field, ProgressBar, TaskTags, dateTime, formatDate, message, type Notify } from './TaskDrawer';
 
-type View = 'board' | 'overview' | 'calendar' | 'access';
+type View = 'board' | 'overview' | 'calendar' | 'settings';
 // Everyone lands on the board. Old ?view=report links open the merged overview/report page.
-function initialView(): View { const v = new URLSearchParams(location.search).get('view'); return v === 'overview' || v === 'report' ? 'overview' : v === 'calendar' || v === 'access' ? v : 'board'; }
+function initialView(): View { const v = new URLSearchParams(location.search).get('view'); return v === 'overview' || v === 'report' ? 'overview' : v === 'calendar' ? v : v === 'settings' || v === 'access' ? 'settings' : 'board'; }
 
 const iconPaths = {
   overview: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></>,
   board: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></>,
   report: <><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/></>,
   calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>,
+  settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></>,
   access: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
 };
 
@@ -39,6 +41,8 @@ function App() {
   const [selected, setSelected] = useState<Task | null>(null);
   const [view, setView] = useState<View>(initialView);
   const [larkTargets, setLarkTargets] = useState<LarkTarget[]>([]);
+  const [developers, setDevelopers] = useState<Developer[]>([]);
+  const [developerFilter, setDeveloperFilter] = useState(0);
   const deepLinked = useRef(false);
   // Latest task reload wins: an older, slower reload must not overwrite newer state.
   const taskLoadSeq = useRef(0);
@@ -88,6 +92,8 @@ function App() {
     } catch (e) { setError(message(e)); }
   }
   useEffect(() => { if (session?.user) loadProjects(); }, [session?.user?.id]);
+  async function loadDevelopers() { try { setDevelopers(await api<Developer[]>('/developers')); } catch (e) { setError(message(e)); } }
+  useEffect(() => { if (session?.user) loadDevelopers(); }, [session?.user?.id]);
 
   async function fetchTasks(rows: Project[]) {
     return (await Promise.all(rows.map(async p=>{
@@ -116,6 +122,7 @@ function App() {
   const visible = scopedTasks.filter((task) =>
     (!query || `${task.title} ${task.public_summary} ${task.feature ?? ''}`.toLowerCase().includes(query.toLowerCase())) &&
     (!feature || task.feature === feature) &&
+    (!developerFilter || (task.developer_ids ?? []).includes(developerFilter)) &&
     (showDone || task.status !== 4 || (task.actual_released_at ?? '').slice(0, 10) >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
   );
 
@@ -202,7 +209,7 @@ function App() {
         <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}><Icon name="board"/>บอร์ดงาน</button>
         <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}><Icon name="report"/>ภาพรวม / รายงาน</button>
         <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}><Icon name="calendar"/>ปฏิทิน / ประชุม</button>
-        {session.user.is_admin && <button className={view === 'access' ? 'active' : ''} onClick={() => setView('access')}><Icon name="access"/>การเข้าถึง</button>}
+        {session.user.is_admin && <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}><Icon name="settings"/>ตั้งค่า</button>}
       </nav>
       <p className="sidebar-label">โปรเจกต์</p>
       <nav className="projects" aria-label="เลือกโปรเจกต์">
@@ -214,33 +221,34 @@ function App() {
       <div className="profile"><span className="avatar">{session.user.label.slice(0, 1)}</span><div className="truncate"><strong>{session.user.label}</strong><small>{session.user.is_admin ? 'ผู้ดูแล' : 'สมาชิก'}{session.user.can_approve ? ' · ผู้อนุมัติ' : ''}</small></div><button className="icon-button" onClick={logout} title="ออกจากอุปกรณ์นี้">↪</button></div>
     </aside>
     <main className="workspace">
-      {view === 'access' && session.user.is_admin ? <AccessManager projects={projects} onProjectsChanged={loadProjects} onBack={() => setView('board')} /> : <>
-        {!(isMobile && view === 'board') && <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="access">การเข้าถึง</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={newTask}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>}
-        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:isMobile?(loadingTasks?<Empty title="กำลังโหลดงาน…" text=""/>:<MobileBoard tasks={visible} projects={projects} projectId={projectId} query={query} canApprove={!!session.user.can_approve} canCreate={editable} showDone={showDone} onShowDone={setShowDone} moving={moving} onProject={setProjectId} onQuery={setQuery} onOpen={setSelected} onNew={newTask} onApprove={approveTask} onLogout={logout} />):<>
+      {view === 'settings' && session.user.is_admin ? <Settings projects={projects} developers={developers} tasks={tasks} onProjectsChanged={loadProjects} onDevelopersChanged={loadDevelopers} onBack={() => setView('board')} /> : <>
+        {!(isMobile && view === 'board') && <header className="topbar"><div><h1>{view==='calendar'?'ปฏิทิน / ประชุม':view==='overview'?'ภาพรวม / รายงานสัปดาห์':project?.name??'งานทุกโปรเจกต์'}</h1><span>{scopedTasks.filter(t=>t.status!==4).length} งานค้าง</span></div><div className="topbar-actions"><select aria-label="มุมมอง" value={view} onChange={e=>setView(e.target.value as typeof view)}><option value="board">บอร์ดงาน</option><option value="overview">ภาพรวม / รายงาน</option><option value="calendar">ปฏิทิน / ประชุม</option>{session.user.is_admin&&<option value="settings">ตั้งค่า</option>}</select>{view==='board'&&editable&&<button className="primary" onClick={newTask}>+ งานใหม่</button>}<button className="mobile-action" onClick={logout}>ออก</button></div></header>}
+        {view==='calendar'?<MeetingCalendar projects={projects} tasks={tasks} projectId={projectId} onProject={setProjectId} onTask={setSelected}/>:view==='overview'?<ProjectViews projects={projects} tasks={tasks} projectId={projectId} onProject={(id,board)=>{setProjectId(id);if(board)setView('board');}} onOpen={setSelected}/>:isMobile?(loadingTasks?<Empty title="กำลังโหลดงาน…" text=""/>:<MobileBoard tasks={visible} projects={projects} developers={developers} projectId={projectId} query={query} canApprove={!!session.user.can_approve} canCreate={editable} showDone={showDone} onShowDone={setShowDone} moving={moving} onProject={setProjectId} onQuery={setQuery} onOpen={setSelected} onNew={newTask} onApprove={approveTask} onLogout={logout} />):<>
         <div className="toolbar">
           <select aria-label="โปรเจกต์" value={projectId ?? 0} onChange={(e) => setProjectId(Number(e.target.value))}><option value={0}>ทุกโปรเจกต์</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <select aria-label="ฟังก์ชัน" value={feature} onChange={(e) => setFeature(e.target.value)}><option value="">ทุกฟังก์ชัน</option>{features.map((f) => <option key={f}>{f}</option>)}</select>
+          {developers.length > 0 && tasks.some((t) => t.developer_ids) && <select aria-label="ผู้พัฒนา" value={developerFilter} onChange={(e) => setDeveloperFilter(Number(e.target.value))}><option value={0}>ทุกผู้พัฒนา</option>{developers.map((d) => <option key={d.id} value={d.id}>{d.name}{d.active ? '' : ' (ปิดใช้)'}</option>)}</select>}
           <input aria-label="ค้นหางาน" placeholder="ค้นหางาน…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <label><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> งานเสร็จเก่า</label>
           <span className="toolbar-count">{visible.length} งาน</span>
           <div className="layout-toggle" role="group" aria-label="รูปแบบการแสดง"><button type="button" aria-pressed={layout === 'kanban'} onClick={() => setLayout('kanban')}>Kanban</button><button type="button" aria-pressed={layout === 'table'} onClick={() => setLayout('table')}>ตาราง</button></div>
         </div>
 
-        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : layout === 'table' ? <TaskTable tasks={visible} projects={projects} canApprove={!!session.user.can_approve} moving={moving} onOpen={setSelected} onApprove={approveTask} /> : <Board tasks={visible} projects={projects} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} canApprove={!!session.user.can_approve} onApprove={approveTask} onOpen={setSelected} onMove={moveTask} />}
+        {loadingTasks ? <Empty title="กำลังโหลดงาน…" text=""/> : !projects.length ? <Empty title="ยังไม่มีโปรเจกต์" text="ผู้ดูแลสามารถสร้างโปรเจกต์จากหน้าการเข้าถึง" /> : layout === 'table' ? <TaskTable tasks={visible} projects={projects} developers={developers} canApprove={!!session.user.can_approve} moving={moving} onOpen={setSelected} onApprove={approveTask} /> : <Board tasks={visible} projects={projects} developers={developers} canEdit={(t) => canEdit(t) && !moving.includes(t.id)} canApprove={!!session.user.can_approve} onApprove={approveTask} onOpen={setSelected} onMove={moveTask} />}
         </>}
       </>}
       {notice && !error && <div className="floating-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {error && <div className="floating-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
     </main>
     <nav className="mobile-tabs" aria-label="เมนูหลัก">
-      {([['board', 'งาน'], ['overview', 'ภาพรวม'], ['calendar', 'ปฏิทิน'], ...(session.user.is_admin ? [['access', 'การเข้าถึง']] : [])] as [View, string][]).map(([key, label]) =>
+      {([['board', 'งาน'], ['overview', 'ภาพรวม'], ['calendar', 'ปฏิทิน'], ...(session.user.is_admin ? [['settings', 'ตั้งค่า']] : [])] as [View, string][]).map(([key, label]) =>
         <button key={key} className={view === key ? 'active' : ''} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}><Icon name={key === 'overview' ? 'report' : key} /><span>{label}</span></button>)}
     </nav>
-    {selected && <TaskDrawer key={selected.id} projects={projects} task={selected} editable={canEdit(selected)} canApprove={!!session.user.can_approve} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
+    {selected && <TaskDrawer key={selected.id} projects={projects} developers={developers} task={selected} editable={canEdit(selected)} canApprove={!!session.user.can_approve} busy={busy} larkTargets={larkTargets} onClose={() => setSelected(null)} onSave={saveTask} onChanged={(saved) => { taskLoadSeq.current++; setTasks((current) => current.map((t) => t.id === saved.id ? saved : t)); }} onDeleted={(gone) => { taskLoadSeq.current++; setTasks((current) => current.filter((t) => t.id !== gone.id)); setSelected(null); setNotice('ลบงานแล้ว'); }} onError={setError} onNotice={setNotice} />}
   </div>;
 }
 
-function Board({ tasks, projects, canEdit, canApprove, onApprove, onOpen, onMove }: { tasks: Task[]; projects:Project[]; canEdit:(t:Task)=>boolean; canApprove: boolean; onApprove: (t: Task) => void; onOpen: (t: Task) => void; onMove: (t: Task, s: number) => void }) {
+function Board({ tasks, projects, developers, canEdit, canApprove, onApprove, onOpen, onMove }: { tasks: Task[]; projects:Project[]; developers: Developer[]; canEdit:(t:Task)=>boolean; canApprove: boolean; onApprove: (t: Task) => void; onOpen: (t: Task) => void; onMove: (t: Task, s: number) => void }) {
   const [dragId, setDragId] = useState<number | null>(null);
   return <div className="board" aria-label="บอร์ด Kanban">
     {STATUS_ORDER.map((index) => {
@@ -258,6 +266,7 @@ function Board({ tasks, projects, canEdit, canApprove, onApprove, onOpen, onMove
             {task.blocked_reason && <p className="blocked">! {task.blocked_reason}</p>}
             <div className={`deadline ${task.status !== 4 && task.planned_go_live_on && task.planned_go_live_on < new Date().toISOString().slice(0, 10) ? 'overdue' : ''}`}>▣ {task.planned_go_live_on ? `เริ่มใช้ ${formatDate(task.planned_go_live_on)}` : 'ยังไม่กำหนดวันเริ่มใช้'}</div>
             {approvable(task.status) && canApprove && <button type="button" className="approve-tick" onClick={(e) => { e.stopPropagation(); onApprove(task); }} onKeyDown={(e) => e.stopPropagation()} aria-label={'อนุมัติ ' + task.title}>✓ อนุมัติ</button>}
+            {developerNames(task, developers) && <p className="card-devs">ผู้พัฒนา: {developerNames(task, developers)}</p>}
             <footer><span>{task.assignee || 'ยังไม่ระบุผู้รับผิดชอบ'}</span><span>#{String(task.id).padStart(3, '0')}</span></footer>
           </article>)}
           {!items.length && <div className="drop-empty">ลากงานมาวางที่นี่</div>}
@@ -275,7 +284,22 @@ function linkState(link: AccessLink) {
   return 'รอเปิด · หมดอายุ ' + dateTime(link.expires_at);
 }
 
-function AccessManager({ projects, onProjectsChanged, onBack }: { projects: Project[]; onProjectsChanged: () => Promise<void>; onBack: () => void }) {
+// ตั้งค่า (owner, 2026-09-19): the former การเข้าถึง page is now one tab; นักพัฒนา is the other.
+type SettingsTab = 'access' | 'developers';
+function Settings({ projects, developers, tasks, onProjectsChanged, onDevelopersChanged, onBack }: { projects: Project[]; developers: Developer[]; tasks: Task[]; onProjectsChanged: () => Promise<void>; onDevelopersChanged: () => Promise<void>; onBack: () => void }) {
+  const [tab, setTab] = useState<SettingsTab>(() => new URLSearchParams(location.search).get('tab') === 'developers' ? 'developers' : 'access');
+  useEffect(() => { const url = new URL(location.href); url.searchParams.set('tab', tab); history.replaceState({}, '', url); return () => { const u = new URL(location.href); u.searchParams.delete('tab'); history.replaceState({}, '', u); }; }, [tab]);
+  const tabs = <div className="settings-tabs" role="tablist" aria-label="ตั้งค่า">
+    <button role="tab" aria-selected={tab === 'access'} className={tab === 'access' ? 'active' : ''} onClick={() => setTab('access')}>การเข้าถึง</button>
+    <button role="tab" aria-selected={tab === 'developers'} className={tab === 'developers' ? 'active' : ''} onClick={() => setTab('developers')}>นักพัฒนา</button>
+  </div>;
+  return tab === 'access'
+    ? <AccessManager projects={projects} tabs={tabs} onProjectsChanged={onProjectsChanged} onBack={onBack} />
+    : <><header className="topbar"><div><h1>ตั้งค่า</h1><span>รายชื่อนักพัฒนาที่เลือกใส่ในงานได้</span></div><div className="topbar-actions"><button className="mobile-action" onClick={onBack}>กลับบอร์ด</button></div></header>{tabs}
+      <DevelopersManager developers={developers} tasks={tasks} onChanged={onDevelopersChanged} /></>;
+}
+
+function AccessManager({ projects, tabs, onProjectsChanged, onBack }: { projects: Project[]; tabs: React.ReactNode; onProjectsChanged: () => Promise<void>; onBack: () => void }) {
   const [members, setMembers] = useState<AccessMember[]>([]);
   const [label, setLabel] = useState('');
   const [role, setRole] = useState('viewer');
@@ -340,7 +364,7 @@ function AccessManager({ projects, onProjectsChanged, onBack }: { projects: Proj
     <input aria-label="ลิงก์เชิญที่สร้างแล้ว" readOnly value={issued.link} onFocus={(e) => e.target.select()} />
     <button onClick={async () => { try { await navigator.clipboard.writeText(issued.link); setCopied(true); } catch { setError('คัดลอกไม่สำเร็จ กรุณาเลือกและคัดลอกลิงก์จากช่อง'); } }}>{copied ? 'คัดลอกแล้ว' : 'คัดลอก'}</button>
   </div>;
-  return <><header className="topbar"><div><h1>การเข้าถึง</h1><span>ลิงก์เชิญและสมาชิก</span></div><div className="topbar-actions"><button className="secondary" onClick={() => setShowProjectForm(!showProjectForm)}>{showProjectForm ? 'ปิดฟอร์ม' : '+ โปรเจกต์'}</button><button className="mobile-action" onClick={onBack}>กลับบอร์ด</button></div></header>
+  return <><header className="topbar"><div><h1>ตั้งค่า</h1><span>ลิงก์เชิญและสมาชิก</span></div><div className="topbar-actions"><button className="secondary" onClick={() => setShowProjectForm(!showProjectForm)}>{showProjectForm ? 'ปิดฟอร์ม' : '+ โปรเจกต์'}</button><button className="mobile-action" onClick={onBack}>กลับบอร์ด</button></div></header>{tabs}
     <div className="access-content">
       {error && <div className="alert error" role="alert">{error}</div>}
       {projectNotice && <div className="alert success" role="status">{projectNotice}</div>}

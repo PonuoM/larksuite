@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from './api';
-import type { ChecklistItem, LarkTarget, Project, Task, TaskEvent } from './types';
+import type { ChecklistItem, Developer, LarkTarget, Project, Task, TaskEvent } from './types';
+import { DeveloperPicker, developerNames } from './Developers';
 
 // Index = status code stored in the database (5 and 6 appended by migration 006).
 // Codes 2 and 5 were merged away (migration 007); their names stay so old history still reads correctly.
@@ -11,7 +12,7 @@ export const STATUS_ORDER = [6, 0, 1, 3, 4];
 export const AWAITING_APPROVAL = 6;
 export const approvable = (status: number) => status === AWAITING_APPROVAL;
 export const EMPTY_TASK: Omit<Task, 'id' | 'project_id' | 'updated_at' | 'version' | 'actual_released_at'> = {
-  title: '', feature: '', kind: '', size: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '',
+  title: '', feature: '', kind: '', size: '', public_summary: '', scope: '', criteria: '', evidence: '', assignee: '', developer_ids: [],
   blocked_reason: '', checklist: [], status: 0, planned_go_live_on: '', archived: 0,
 };
 export type Notify = '' | LarkTarget['key'];
@@ -51,12 +52,12 @@ function NotifyPicker({ targets, value, onChange, label = 'แจ้ง Lark' }:
 }
 
 type Props = {
-  task: Task; projects: Project[]; editable: boolean; canApprove: boolean; busy: boolean; larkTargets: LarkTarget[];
+  task: Task; projects: Project[]; developers: Developer[]; editable: boolean; canApprove: boolean; busy: boolean; larkTargets: LarkTarget[];
   onClose: () => void; onSave: (t: Task, notify: Notify, notifyText: string) => void;
   onChanged: (t: Task) => void; onDeleted: (t: Task) => void; onError: (s: string) => void; onNotice: (s: string) => void;
 };
 
-export default function TaskDrawer({ task, projects, editable, canApprove, busy, larkTargets, onClose, onSave, onChanged, onDeleted, onError, onNotice }: Props) {
+export default function TaskDrawer({ task, projects, developers, editable, canApprove, busy, larkTargets, onClose, onSave, onChanged, onDeleted, onError, onNotice }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   async function remove() {
@@ -71,7 +72,7 @@ export default function TaskDrawer({ task, projects, editable, canApprove, busy,
   // A new task object arrives after every successful save: show it, and do not repeat the Lark notice on the next save.
   useEffect(() => { setDraft(task); setNotify(''); setNotifyText(''); }, [task]);
   const isNew = task.id === 0;
-  function field(name: keyof Task, value: string | number | ChecklistItem[]) { setDraft((d) => ({ ...d, [name]: value })); }
+  function field(name: keyof Task, value: string | number | number[] | ChecklistItem[]) { setDraft((d) => ({ ...d, [name]: value })); }
   // Sub-task changes on a saved task are stored immediately; keep the rest of the unsaved form as it is.
   function applied(saved: Task) { setDraft((d) => ({ ...d, checklist: saved.checklist, version: saved.version, updated_at: saved.updated_at })); onChanged(saved); }
 
@@ -87,8 +88,9 @@ export default function TaskDrawer({ task, projects, editable, canApprove, busy,
           <div className="field-grid"><Field label="สถานะ"><select value={draft.status} onChange={(e) => field('status', Number(e.target.value))}>{STATUS_ORDER.map((i) => <option key={i} value={i} disabled={i !== draft.status && task.status === AWAITING_APPROVAL && !canApprove}>{STATUSES[i]}</option>)}</select></Field><Field label="กำหนดเริ่มใช้งาน (เว้นว่างได้)"><input type="date" value={draft.planned_go_live_on ?? ''} onChange={(e) => field('planned_go_live_on', e.target.value)} /></Field></div>
           <div className="field-grid"><Field label="ประเภทงาน"><select value={draft.kind} onChange={(e) => field('kind', e.target.value)}><option value="">ไม่ระบุ</option>{Object.entries(KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field><Field label="ขนาดงาน (ประมาณเวลา)"><select value={draft.size} onChange={(e) => field('size', e.target.value)}><option value="">ไม่ระบุ</option>{Object.entries(SIZES).map(([k, v]) => <option key={k} value={k}>{v.label} · {v.hint}</option>)}</select></Field></div>
           <div className="field-grid"><Field label="ฟังก์ชัน"><input value={draft.feature ?? ''} onChange={(e) => field('feature', e.target.value)} /></Field><Field label="ผู้รับผิดชอบ"><input value={draft.assignee ?? ''} onChange={(e) => field('assignee', e.target.value)} /></Field></div>
+          <DeveloperPicker developers={developers} value={draft.developer_ids ?? []} onChange={(ids) => field('developer_ids', ids)} />
           <Field label="สรุปสำหรับผู้ชมภายนอก"><textarea rows={3} value={draft.public_summary} onChange={(e) => field('public_summary', e.target.value)} placeholder="1–2 ประโยคที่คนนอกทีมอ่านแล้วเข้าใจ: ทำอะไร เพื่อใคร ตอนนี้ถึงไหน" /></Field>
-        </> : <><ViewerSummary task={draft} projects={projects} />{canApprove && <ReadOnlyDetails task={draft} />}</>}
+        </> : <><ViewerSummary task={draft} projects={projects} />{canApprove && <ReadOnlyDetails task={draft} developers={developers} />}</>}
         <Subtasks task={draft} editable={editable} onLocal={(list) => field('checklist', list)} onApplied={applied} onError={onError} />
         {editable && <>
           <TemplateField label="รายละเอียดและขอบเขตงาน" rows={8} value={draft.scope ?? ''} template={SCOPE_TEMPLATE} onChange={(v) => field('scope', v)} />
@@ -137,8 +139,8 @@ function ApprovalPanel({ task, onDone, onComment, onError }: { task: Task; onDon
 }
 
 // Approvers with a view-only link still need the whole picture to decide.
-function ReadOnlyDetails({ task }: { task: Task }) {
-  const blocks = [['รายละเอียดและขอบเขต', task.scope], ['เกณฑ์ตรวจรับ', task.criteria], ['สาเหตุที่ติดขัด / เรื่องที่รอตัดสินใจ', task.blocked_reason], ['หลักฐาน', task.evidence]].filter(([, v]) => v && v.trim());
+function ReadOnlyDetails({ task, developers }: { task: Task; developers: Developer[] }) {
+  const blocks = [['ผู้พัฒนา', developerNames(task, developers)], ['รายละเอียดและขอบเขต', task.scope], ['เกณฑ์ตรวจรับ', task.criteria], ['สาเหตุที่ติดขัด / เรื่องที่รอตัดสินใจ', task.blocked_reason], ['หลักฐาน', task.evidence]].filter(([, v]) => v && v.trim());
   if (!blocks.length) return null;
   return <div className="readonly-details">{blocks.map(([label, value]) => <section key={label}><h3>{label}</h3><p>{value}</p></section>)}</div>;
 }
@@ -203,7 +205,7 @@ function Subtasks({ task, editable, onLocal, onApplied, onError }: { task: Task;
   </section>;
 }
 
-const FIELD_NAMES: Record<string, string> = { project_id: 'ย้ายโปรเจกต์', title: 'ชื่องาน', feature: 'ฟังก์ชัน', public_summary: 'สรุป', scope: 'รายละเอียด', criteria: 'เกณฑ์ตรวจรับ', evidence: 'หลักฐาน', assignee: 'ผู้รับผิดชอบ', blocked_reason: 'สาเหตุที่ติดขัด', checklist: 'งานย่อย', planned_go_live_on: 'กำหนดเริ่มใช้', status: 'สถานะ' };
+const FIELD_NAMES: Record<string, string> = { project_id: 'ย้ายโปรเจกต์', title: 'ชื่องาน', feature: 'ฟังก์ชัน', public_summary: 'สรุป', scope: 'รายละเอียด', criteria: 'เกณฑ์ตรวจรับ', evidence: 'หลักฐาน', assignee: 'ผู้รับผิดชอบ', developer_ids: 'ผู้พัฒนา', kind: 'ประเภทงาน', size: 'ขนาดงาน', blocked_reason: 'สาเหตุที่ติดขัด', checklist: 'งานย่อย', planned_go_live_on: 'กำหนดเริ่มใช้', status: 'สถานะ' };
 
 function describe(event: TaskEvent): { title: string; body?: string } {
   let p: Record<string, any> = {};

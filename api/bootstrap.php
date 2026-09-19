@@ -120,6 +120,8 @@ function taskDto(array $t,string $role): array {
     // Viewers see sub-task names and progress, never the internal notes.
     $out['checklist']=$role==='viewer'?array_map(function($c){return ['id'=>$c['id'],'label'=>$c['label'],'done'=>$c['done']];},$list):$list;
     if ($role!=='viewer') foreach (['feature','scope','criteria','evidence','assignee','blocked_reason','archived'] as $key) $out[$key]=$t[$key];
+    // Who develops the task (migration 009): ids only; the client names them from GET /developers.
+    if ($role!=='viewer') $out['developer_ids']=array_map('intval',json_decode($t['developer_ids']??'[]',true)?:[]);
     return $out;
 }
 function checklistItem(array $item,string $fallbackId): array {

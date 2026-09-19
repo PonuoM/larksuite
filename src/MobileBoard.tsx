@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
-import type { Project, Task } from './types';
+import type { Developer, Project, Task } from './types';
+import { developerNames } from './Developers';
 import { STATUSES, STATUS_ORDER, TaskTags, approvable, progress, formatDate } from './TaskDrawer';
 import { today } from './ProjectViews';
 
 // Phone layout of the board (owner mock-up, 2026-09-18): a status-grouped list with filter chips instead of
 // seven swipeable columns. Desktop keeps the Kanban board.
 type Props = {
+  developers: Developer[];
   tasks: Task[]; projects: Project[]; projectId: number | null; query: string; canApprove: boolean; canCreate: boolean;
   showDone: boolean; onShowDone: (v: boolean) => void; moving: number[];
   onProject: (id: number) => void; onQuery: (q: string) => void; onOpen: (t: Task) => void; onNew: () => void; onApprove: (t: Task) => void; onLogout: () => void;
@@ -23,7 +25,7 @@ function when(t: Task): { text: string; late?: boolean } {
   return { text: new Date(t.planned_go_live_on + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) };
 }
 
-export default function MobileBoard({ tasks, projects, projectId, query, canApprove, canCreate, showDone, onShowDone, moving, onProject, onQuery, onOpen, onNew, onApprove, onLogout }: Props) {
+export default function MobileBoard({ tasks, projects, developers, projectId, query, canApprove, canCreate, showDone, onShowDone, moving, onProject, onQuery, onOpen, onNew, onApprove, onLogout }: Props) {
   const [status, setStatus] = useState<number | null>(null);
   const [layout, setLayout] = useState<'list' | 'board'>('list');
   const counts = useMemo(() => new Map(STATUS_ORDER.map((s) => [s, tasks.filter((t) => t.status === s).length])), [tasks]);
@@ -64,6 +66,7 @@ export default function MobileBoard({ tasks, projects, projectId, query, canAppr
                 <span>{total ? `✓ ${done}/${total} งานย่อย` : 'ยังไม่มีงานย่อย'}</span>
                 <span className={w.late ? 'late' : ''}>{w.text}</span>
               </div>
+              {developerNames(t, developers) && <span className="mrow-devs">ผู้พัฒนา: {developerNames(t, developers)}</span>}
               {t.assignee && <span className="mrow-owner"><span aria-hidden="true">{t.assignee.slice(0, 1)}</span>{t.assignee}</span>}
               </button>
               {canApprove && approvable(t.status) && <button type="button" className="approve-tick" disabled={moving.includes(t.id)} onClick={() => onApprove(t)} aria-label={'อนุมัติ ' + t.title}>{moving.includes(t.id) ? 'กำลังอนุมัติ…' : '✓ อนุมัติงาน'}</button>}

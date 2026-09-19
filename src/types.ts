@@ -35,6 +35,8 @@ export type Task = {
   criteria?: string;
   evidence?: string;
   assignee?: string;
+  // Developer ids (migration 009); not sent to viewers. Names come from GET /developers.
+  developer_ids?: number[];
   blocked_reason?: string;
   checklist?: ChecklistItem[];
   archived?: number;
@@ -75,5 +77,7 @@ export type AccessMember = {
 };
 
 export type Meeting = { id: number; project_id: number; title: string; meeting_on: string; participants?: string; content?: string; published: boolean; version: number; updated_at: string };
+
+export type Developer = { id: number; name: string; active: boolean };
 
 export type LarkTarget = { key: 'main' | 'test'; label: string };

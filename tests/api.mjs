@@ -118,6 +118,35 @@ try {
   if (unsized.status === 201) await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(unsized.payload.data.id)};`);
   if (unsized.status !== 201 || unsized.payload.data.kind !== '' || unsized.payload.data.size !== '') throw new Error(`task without kind/size rejected: ${unsized.status}`);
 
+  // Developers (migration 009): admins manage the list; a task names several; PATCH without the field keeps them;
+  // a deactivated developer stays on old tasks but cannot be newly added; viewers never receive the ids.
+  const devName = `API dev ${marker}`;
+  if ((await call(editor, '/developers', { method: 'POST', body: JSON.stringify({ name: devName }) })).status !== 403) throw new Error('editor created a developer');
+  const devA = await call(admin, '/developers', { method: 'POST', body: JSON.stringify({ name: devName }) });
+  if (devA.status !== 201) throw new Error('create developer failed: ' + JSON.stringify(devA));
+  if ((await call(admin, '/developers', { method: 'POST', body: JSON.stringify({ name: devName }) })).status !== 409) throw new Error('duplicate developer name accepted');
+  const devB = await call(admin, '/developers', { method: 'POST', body: JSON.stringify({ name: devName + ' B' }) });
+  const [idA, idB] = [devA.payload.data.id, devB.payload.data.id];
+  if (!(await call(editor, '/developers')).payload.data.some((d) => d.id === idA)) throw new Error('editor cannot read developers');
+  const devTask = await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, title: 'developer test', developer_ids: [idB, idA, idA] }) });
+  if (devTask.status !== 201 || JSON.stringify(devTask.payload.data.developer_ids) !== JSON.stringify([idA, idB].sort((x, y) => x - y))) throw new Error('task developer ids not stored: ' + JSON.stringify(devTask.payload));
+  const devTaskId = devTask.payload.data.id;
+  try {
+    const kept = await call(editor, `/tasks/${devTaskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, title: 'developer test', version: devTask.payload.data.version }) });
+    if (kept.status !== 200 || kept.payload.data.developer_ids.length !== 2) throw new Error('PATCH without developer_ids wiped them');
+    if ((await call(editor, `/tasks/${devTaskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, developer_ids: [999999999], version: kept.payload.data.version }) })).status !== 422) throw new Error('unknown developer accepted');
+    if ((await call(admin, `/developers/${idB}`, { method: 'PATCH', body: JSON.stringify({ active: false }) })).status !== 200) throw new Error('deactivate developer failed');
+    const stays = await call(editor, `/tasks/${devTaskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, developer_ids: [idA, idB], version: kept.payload.data.version }) });
+    if (stays.status !== 200) throw new Error('deactivated developer could not stay on its task: ' + stays.status);
+    if ((await call(editor, `/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify({ ...taskInput, developer_ids: [idB] }) })).status !== 422) throw new Error('deactivated developer newly added');
+    const renamed = await call(admin, `/developers/${idA}`, { method: 'PATCH', body: JSON.stringify({ name: devName + ' renamed' }) });
+    if (renamed.status !== 200 || renamed.payload.data.name !== devName + ' renamed') throw new Error('rename developer failed');
+    const seen = (await call(viewer, `/projects/${projectId}/tasks`)).payload.data.items.find((t) => t.id === devTaskId);
+    if (!seen || 'developer_ids' in seen) throw new Error('viewer received developer ids');
+  } finally {
+    await sql(`UPDATE tasks SET archived=1 WHERE id=${Number(devTaskId)}; DELETE FROM developers WHERE id IN (${Number(idA)},${Number(idB)});`);
+  }
+
   const moved = await call(editor, `/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ ...taskInput, status: 1, version }) });
   if (moved.status !== 200 || moved.payload.data.status !== 1 || moved.payload.data.version !== version + 1) throw new Error('move/version failed');
 
@@ -336,7 +365,7 @@ try {
   if(eventCount!==3)throw new Error('meeting audit event count incorrect');
   if((await call(editor,'/meetings/'+meetingId,{method:'DELETE',body:JSON.stringify({version:3})})).status!==200)throw new Error('archive meeting failed');
   if((await call(editor,'/meetings/'+meetingId)).status!==404)throw new Error('archived meeting readable');
-  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'five columns + approval 6→0 + CEO comments', 'move task between projects'] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['one-time invite redemption', 'session + CSRF', 'project-scoped editor', 'create + persisted task', 'multibyte title length', 'optimistic version conflict', 'viewer field projection', 'viewer write denial', 'event history', 'archive', 'multiple/all existing project access', 'unselected project denial', 'invalid project selection', 'one-time token replay denial', 'permanent reusable link', 'close link ends its sessions', 'replacement link keeps scope', 'cannot close current session link', 'meeting persistence and month filtering', 'meeting publication and viewer projection', 'meeting write/project denial', 'meeting conflict and audit', 'meeting archive', 'viewer sub-task projection', 'sub-task add/set/remove + ids', 'progress notes', 'Lark target validation', 'viewable permanent links', 'five columns + approval 6→0 + CEO comments', 'move task between projects', 'developers: admin list, multi-assign, keep on PATCH, deactivate, viewer projection'] }, null, 2));
 } finally {
   if(meetingId) await sql('UPDATE meetings SET archived=1 WHERE id='+meetingId);
   const ids = [editor.id, viewer.id, ...extraPrincipals].join(',');
